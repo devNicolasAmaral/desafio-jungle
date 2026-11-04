@@ -8,7 +8,7 @@ export interface MoneyProps {
 export class Money {
     private constructor(
         private readonly value: Decimal,
-        private readonly currency: string
+        public readonly currency: string
     ) {}
 
     public static from(props: MoneyProps): Money {
