@@ -1,5 +1,5 @@
 import {describe, expect, it } from 'bun:test';
-import { Money } from './money.value-objects'; 
+import { Money } from './money.value-object'; 
 
 describe('Money Value Object', () => {
     it('deve criar uma instância válida de Money', () => {

@@ -1,4 +1,4 @@
-import { Money } from '../value-objects/money.value-objects';
+import { Money } from '../value-objects/money.value-object';
 
 export interface WalletProps {
     id: string;

@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'bun:test';
-import {Money} from '../value-objects/money.value-objects';
+import {Money} from '../value-objects/money.value-object';
 import { Wallet } from './wallet.aggregate';
 
 describe('Wallet Aggregate Root', () => {
