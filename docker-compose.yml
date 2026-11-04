@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: jungle_postgres
+    environment:
+      POSTGRES_USER: jungle_user
+      POSTGRES_PASSWORD: jungle_password
+      POSTGRES_DB: jungle_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jungle_user -d jungle_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: jungle_localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+
+volumes:
+  postgres_data:
