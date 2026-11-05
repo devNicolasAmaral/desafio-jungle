@@ -2,7 +2,7 @@ import { Money } from '../value-objects/money.value-object';
 
 export interface WalletProps {
     id: string;
-    playerID: string;
+    playerId: string;
     currency: string;
     balance: Money;
     version: number;
@@ -13,7 +13,7 @@ export interface WalletProps {
 export class Wallet {
     private constructor(
         public readonly id: string,
-        public readonly playerID: string,
+        public readonly playerId: string,
         public readonly currency: string,
         public  _balance: Money,
         public  _version: number,
@@ -21,11 +21,11 @@ export class Wallet {
         public  _updatedAt: Date
     ) {}
 
-    public static open(props: { id: string; playerID: string; initialBalance: Money }) : Wallet {
+    public static open(props: { id: string; playerId: string; initialBalance: Money }) : Wallet {
         const now = new Date();
         return new Wallet(
             props.id,
-            props.playerID,
+            props.playerId,
             props.initialBalance.currency,
             props.initialBalance,
             1,

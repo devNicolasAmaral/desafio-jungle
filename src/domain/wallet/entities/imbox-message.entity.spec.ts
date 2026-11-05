@@ -40,7 +40,6 @@ describe('InboxMessage Entity', () => {
         message.markProcessed(); // Primeiro processamento funciona
 
         // Segundo processamento deve falhar
-
         expect(() => message.markProcessed()).toThrow('Mensagem já foi processada.');
     });
 });

@@ -7,12 +7,12 @@ describe('Wallet Aggregate Root', () => {
         const initialBalance = Money.from({ amount: '100.00', currency: 'BRL' });
         const wallet = Wallet.open({
             id: 'wallet-1',
-            playerID: 'player-1',
+            playerId: 'player-1',
             initialBalance,
         });
 
         expect(wallet.id).toBe('wallet-1');
-        expect(wallet.playerID).toBe('player-1');
+        expect(wallet.playerId).toBe('player-1');
         expect(wallet.currency).toBe('BRL');
         expect(wallet.balance.toJSON().amount).toBe('100.00');
         expect(wallet.version).toBe(1);
@@ -22,7 +22,7 @@ describe('Wallet Aggregate Root', () => {
         const initialBalance = Money.from({ amount: '100.00', currency: 'BRL' });
         const wallet = Wallet.open({
             id: 'wallet-1',
-            playerID: 'player-1',
+            playerId: 'player-1',
             initialBalance,
         });
         
@@ -37,7 +37,7 @@ describe('Wallet Aggregate Root', () => {
         const initialBalance = Money.from({ amount: '50.00', currency: 'BRL' });
         const wallet = Wallet.open({
             id: 'wallet-1',
-            playerID: 'player-1',
+            playerId: 'player-1',
             initialBalance,
         });
 
@@ -52,7 +52,7 @@ describe('Wallet Aggregate Root', () => {
         const initialBalance = Money.from({ amount: '100.00', currency: 'BRL' });
         const wallet = Wallet.open({
             id: 'wallet-1',
-            playerID: 'player-1',
+            playerId: 'player-1',
             initialBalance,
         });
     
@@ -67,7 +67,7 @@ describe('Wallet Aggregate Root', () => {
         const initialBalance = Money.from({ amount: '100.00', currency: 'BRL' });
         const wallet = Wallet.open({
             id: 'wallet-1',
-            playerID: 'player-1',
+            playerId: 'player-1',
             initialBalance,
         });
 
