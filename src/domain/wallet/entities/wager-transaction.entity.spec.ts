@@ -14,7 +14,7 @@ describe('WagerTransaction Entity', () => {
         externalTransactionId: 'ext-123',
         idempotencyKey: 'provider-a:ext-123',
         payloadHash: 'hash-abc',
-        walledId: 'wallet-1',
+        walletId: 'wallet-1',
         playerId: 'player-1',
         roundId: 'round-1',
         gameId: 'game-1',

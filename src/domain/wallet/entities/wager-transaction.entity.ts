@@ -33,7 +33,7 @@ export interface CreateWagerTransactionProps {
     externalTransactionId: string;
     idempotencyKey: string;
     payloadHash: string;
-    walledId: string;
+    walletId: string;
     playerId: string;
     roundId: string;
     gameId: string;
@@ -49,7 +49,7 @@ export class WagerTransaction {
         public readonly externalTransactionId: string,
         public readonly idempotencyKey: string,
         public readonly payloadHash: string,
-        public readonly walledId: string,
+        public readonly walletId: string,
         public readonly playerId: string,
         public readonly roundId: string,
         public readonly gameId: string,
@@ -78,7 +78,7 @@ export class WagerTransaction {
             props.externalTransactionId,
             props.idempotencyKey,
             props.payloadHash,
-            props.walledId,
+            props.walletId,
             props.playerId,
             props.roundId,
             props.gameId,
