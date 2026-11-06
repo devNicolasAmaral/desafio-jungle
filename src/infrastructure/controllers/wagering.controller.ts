@@ -19,6 +19,7 @@ import { ProcessWagerTransactionDto } from '../../application/dtos/process-wager
 import { Money } from '../../domain/wallet/value-objects/money.value-object';
 import { WagerTransactionStatus } from '../../domain/wallet/entities/wager-transaction.entity';
 import type { WalletRepository } from '../../domain/wallet/repositories/wallet.repository';
+import { canonicalJson } from '../utils/canonical-json.util';
 
 @Controller()
 export class WageringController {
@@ -39,7 +40,7 @@ export class WageringController {
         }
 
         const payloadHash = createHash('sha256')
-            .update(JSON.stringify(dto))
+            .update(canonicalJson(dto))
             .digest('hex');
 
         try {
