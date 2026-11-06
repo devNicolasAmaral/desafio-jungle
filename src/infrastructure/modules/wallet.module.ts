@@ -7,6 +7,7 @@ import { WageringController } from '../controllers/wagering.controller';
 import { HealthController } from '../controllers/health.controller';
 import { SqsPublisherService } from '../messaging/sqs-publisher.service';
 import { OutboxPublisherWorker } from '../workers/outbox-publisher.worker';
+import { SqsConsumerWorker } from '../workers/sqs-consumer.worker';
 
 @Module({
     controllers: [WalletController, WageringController, HealthController],
@@ -16,6 +17,7 @@ import { OutboxPublisherWorker } from '../workers/outbox-publisher.worker';
         ProcessWagerTransactionUseCase,
         SqsPublisherService,
         OutboxPublisherWorker,
+        SqsConsumerWorker,
     ],
     exports: [CreateWalletUseCase],
 })

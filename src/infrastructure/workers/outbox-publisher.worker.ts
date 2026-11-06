@@ -15,7 +15,7 @@ export class OutboxPublisherWorker implements OnModuleInit, OnModuleDestroy {
     ) {}
 
     onModuleInit() {
-        this.timer = setInterval(() => this.tick(), 2000);
+        this.timer = setInterval(() => this.pollOnce(), 2000);
         this.logger.log('Outbox Publisher Worker iniciado (intervalo de 2s).');
     }
 
@@ -23,7 +23,7 @@ export class OutboxPublisherWorker implements OnModuleInit, OnModuleDestroy {
         if (this.timer) clearInterval(this.timer);
     }
 
-    private async tick() {
+    public async pollOnce() {
         if (this.running) return;
         this.running = true;
 
