@@ -42,4 +42,23 @@ describe('InboxMessage Entity', () => {
         // Segundo processamento deve falhar
         expect(() => message.markProcessed()).toThrow('Mensagem já foi processada.');
     });
+
+    it('deve reidratar uma mensagem a partir do estado persistido', () => {
+        const state = {
+            messageId: 'msg-1',
+            consumerName: 'consumer-1',
+            payloadHash: 'hash-1',
+            receivedAt: new Date('2026-01-01T10:00:00Z'),
+            processedAt: new Date('2026-01-01T10:01:00Z'),
+        };
+
+        const message = InboxMessage.rehydrate(state);
+
+        expect(message.messageId).toBe(state.messageId);
+        expect(message.consumerName).toBe(state.consumerName);
+        expect(message.payloadHash).toBe(state.payloadHash);
+        expect(message.receivedAt).toEqual(state.receivedAt);
+        expect(message.processedAt).toEqual(state.processedAt);
+        expect(message.isProcessed()).toBe(true);
+    });
 });

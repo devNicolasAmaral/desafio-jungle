@@ -1,5 +1,16 @@
 import { IntegrationEvent } from "../events/integration-event.base";
 
+export interface OutboxMessageState {
+    id: string;
+    aggregateId: string;
+    eventType: string;
+    payload: Readonly<Record<string, unknown>>;
+    occurredAt: Date;
+    attempts: number;
+    nextAttemptAt?: Date;
+    publishedAt?: Date;
+}
+
 export class OutboxMessage {
     private constructor(
         public readonly id: string,
@@ -7,9 +18,9 @@ export class OutboxMessage {
         public readonly eventType: string,
         public readonly payload: Readonly<Record<string, unknown>>,
         public readonly occurredAt: Date,
-        private  _attempts: number,
-        private  _nextAttemptAt?: Date,
-        private  _publishedAt?: Date,
+        private _attempts: number,
+        private _nextAttemptAt?: Date,
+        private _publishedAt?: Date,
     ) {}
 
     public static enqueue(event: IntegrationEvent<unknown>): OutboxMessage {
@@ -21,6 +32,19 @@ export class OutboxMessage {
             event.occurredAt,
             0,
             new Date(),
+        );
+    }
+
+    public static rehydrate(state: OutboxMessageState): OutboxMessage {
+        return new OutboxMessage(
+            state.id,
+            state.aggregateId,
+            state.eventType,
+            state.payload,
+            state.occurredAt,
+            state.attempts,
+            state.nextAttemptAt,
+            state.publishedAt,
         );
     }
 
@@ -45,16 +69,14 @@ export class OutboxMessage {
     }
 
     public markPublished(at: Date = new Date()): void {
-            if (!this.isPending()) {
-                throw new Error('Mensagem já foi publicada.');
-            }
-            this._publishedAt = at;
+        if (!this.isPending()) {
+            throw new Error('Mensagem já foi publicada.');
         }
+        this._publishedAt = at;
+    }
 
     public scheduleRetry(now: Date = new Date()): void {
         this._attempts += 1;
-        // Backoff exponencial simples: 2^attempts segundos. 
-        // Ex: 1a tentativa = 2s, 2a = 4s, 3a = 8s
         const backoffSeconds = Math.pow(2, this._attempts);
         const nextAttempt = new Date(now.getTime() + backoffSeconds * 1000);
         this._nextAttemptAt = nextAttempt;

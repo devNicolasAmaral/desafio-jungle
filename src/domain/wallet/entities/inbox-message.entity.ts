@@ -4,6 +4,14 @@ export interface ReceiveInboxProps {
     payloadHash: string;
 }
 
+export interface InboxMessageState {
+    messageId: string;
+    consumerName: string;
+    payloadHash: string;
+    receivedAt: Date;
+    processedAt?: Date;
+}
+
 export class InboxMessage {
     private constructor(
         public readonly messageId: string,
@@ -13,13 +21,22 @@ export class InboxMessage {
         private _processedAt?: Date,
     ) {}
 
-
     public static receive(props: ReceiveInboxProps): InboxMessage {
         return new InboxMessage(
             props.messageId,
             props.consumerName,
             props.payloadHash,
             new Date(),
+        );
+    }
+
+    public static rehydrate(state: InboxMessageState): InboxMessage {
+        return new InboxMessage(
+            state.messageId,
+            state.consumerName,
+            state.payloadHash,
+            state.receivedAt,
+            state.processedAt,
         );
     }
 

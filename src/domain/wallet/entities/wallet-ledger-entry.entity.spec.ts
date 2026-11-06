@@ -4,8 +4,6 @@ import {
     LedgerDirection,
     WalletLedgerEntry,
 } from './wallet-ledger-entry.entity';
-import { Wallet } from '../aggregates/wallet.aggregate';
-import { LegacyRouteConverter } from '@nestjs/core/internal';
 
 describe('WalletLedgerEntry Entity', () => {
     const baseProps = {
@@ -62,5 +60,30 @@ describe('WalletLedgerEntry Entity', () => {
                 balanceAfter: Money.from({ amount: '50.00', currency: 'BRL'}),
             }),
         ).toThrow('Inconsistência no ledger');
+    });
+
+    it('deve reidratar uma entrada do ledger a partir do estado persistido', () => {
+        const state = {
+            id: 'entry-1',
+            walletId: 'wallet-1',
+            transactionId: 'txn-1',
+            direction: LedgerDirection.Debit,
+            money: Money.from({ amount: '30.00', currency: 'BRL' }),
+            balanceBefore: Money.from({ amount: '100.00', currency: 'BRL' }),
+            balanceAfter: Money.from({ amount: '70.00', currency: 'BRL' }),
+            createdAt: new Date('2026-01-01T10:00:00Z'),
+        };
+
+        const entry = WalletLedgerEntry.rehydrate(state);
+
+        expect(entry.id).toBe(state.id);
+        expect(entry.walletId).toBe(state.walletId);
+        expect(entry.transactionId).toBe(state.transactionId);
+        expect(entry.direction).toBe(state.direction);
+        expect(entry.money.toJSON().amount).toBe('30.00');
+        expect(entry.balanceBefore.toJSON().amount).toBe('100.00');
+        expect(entry.balanceAfter.toJSON().amount).toBe('70.00');
+        expect(entry.createdAt).toEqual(state.createdAt);
+        expect(entry.isBalanced()).toBe(true);
     });
 });

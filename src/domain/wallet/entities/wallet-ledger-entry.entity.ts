@@ -15,6 +15,17 @@ export interface CreateLedgerEntryProps {
     balanceAfter: Money;
 }
 
+export interface LedgerEntryState {
+    id: string;
+    walletId: string;
+    transactionId: string;
+    direction: LedgerDirection;
+    money: Money;
+    balanceBefore: Money;
+    balanceAfter: Money;
+    createdAt: Date;
+}
+
 export class WalletLedgerEntry {
     private constructor(
         public readonly id: string,
@@ -46,11 +57,23 @@ export class WalletLedgerEntry {
         return entry;
     }
 
+    public static rehydrate(state: LedgerEntryState): WalletLedgerEntry {
+        return new WalletLedgerEntry(
+            state.id,
+            state.walletId,
+            state.transactionId,
+            state.direction,
+            state.money,
+            state.balanceBefore,
+            state.balanceAfter,
+            state.createdAt,
+        );
+    }
+
     public isBalanced(): boolean {
         if (this.direction === LedgerDirection.Credit) {
             return this.balanceBefore.add(this.money).equals(this.balanceAfter);
         }
-
         return this.balanceBefore.subtract(this.money).equals(this.balanceAfter);
     }
 }

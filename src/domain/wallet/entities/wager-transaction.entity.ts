@@ -1,4 +1,5 @@
 import { Money } from '../value-objects/money.value-object';
+import { LedgerDirection } from './wallet-ledger-entry.entity';
 
 export enum WagerTransactionKind {
     Opening = 'OPENING',
@@ -40,6 +41,26 @@ export interface CreateWagerTransactionProps {
     kind: WagerTransactionKind;
     money: Money;
     referenceExternalTransactionId?: string;
+}
+
+export interface WagerTransactionState {
+    id: string;
+    providerId: string;
+    externalTransactionId: string;
+    idempotencyKey: string;
+    payloadHash: string;
+    walletId: string;
+    playerId: string;
+    roundId: string;
+    gameId: string;
+    kind: WagerTransactionKind;
+    money: Money;
+    referenceExternalTransactionId?: string;
+    createdAt: Date;
+    status: WagerTransactionStatus;
+    referenceTransactionId?: string;
+    failureCode?: FailureCode;
+    processedAt?: Date;
 }
 
 export class WagerTransaction {
@@ -90,6 +111,29 @@ export class WagerTransaction {
         );
     }
 
+    public static rehydrate(state: WagerTransactionState): WagerTransaction {
+        return new WagerTransaction(
+            state.id,
+            state.providerId,
+            state.externalTransactionId,
+            state.idempotencyKey,
+            state.payloadHash,
+            state.walletId,
+            state.playerId,
+            state.roundId,
+            state.gameId,
+            state.kind,
+            state.money,
+            state.referenceExternalTransactionId,
+            state.createdAt,
+            state.status,
+            state.referenceTransactionId,
+            state.failureCode,
+            state.processedAt,
+        );
+    }
+
+
     get status(): WagerTransactionStatus {
         return this._status;
     }
@@ -127,6 +171,24 @@ export class WagerTransaction {
 
     public matchesPayload(payloadHash: string): boolean {
         return this.payloadHash === payloadHash;
+    }
+
+    public ledgerDirectionFor(reference?: WagerTransaction): LedgerDirection {
+        if (this.kind === WagerTransactionKind.Loss) {
+            throw new Error('LOSS não afeta o saldo e não gera lançamento no ledger.');
+        }
+        if (this.kind === WagerTransactionKind.Bet) return LedgerDirection.Debit;
+        if (this.kind === WagerTransactionKind.Win) return LedgerDirection.Credit;
+        if (this.kind === WagerTransactionKind.Refund) return LedgerDirection.Credit;
+        if (this.kind === WagerTransactionKind.Opening) return LedgerDirection.Credit;
+        
+        if (this.kind === WagerTransactionKind.Rollback && reference) {
+            if (reference.kind === WagerTransactionKind.Bet) return LedgerDirection.Credit;
+            if (reference.kind === WagerTransactionKind.Win) return LedgerDirection.Debit;
+            if (reference.kind === WagerTransactionKind.Refund) return LedgerDirection.Debit;
+        }
+
+        throw new Error('Não foi possível determinar a direção do ledger para esta transação.');
     }
 
     public markProcessed(referenceTransactionId?: string, at: Date = new Date()): void {

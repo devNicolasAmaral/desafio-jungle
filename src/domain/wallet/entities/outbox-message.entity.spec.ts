@@ -67,4 +67,29 @@ describe('OutboxMessage Entity', () => {
 
         expect(() => outbox.markPublished()).toThrow('Mensagem já foi publicada.');
     });
+
+    it('deve reidratar uma mensagem da outbox a partir do estado persistido', () => {
+        const state = {
+            id: 'outbox-1',
+            aggregateId: 'wallet-1',
+            eventType: 'WalletBalanceChanged',
+            payload: { data: 'test' },
+            occurredAt: new Date('2026-01-01T10:00:00Z'),
+            attempts: 2,
+            nextAttemptAt: new Date('2026-01-01T10:05:00Z'),
+            publishedAt: undefined,
+        };
+
+        const outbox = OutboxMessage.rehydrate(state);
+
+        expect(outbox.id).toBe(state.id);
+        expect(outbox.aggregateId).toBe(state.aggregateId);
+        expect(outbox.eventType).toBe(state.eventType);
+        expect(outbox.payload).toEqual(state.payload);
+        expect(outbox.occurredAt).toEqual(state.occurredAt);
+        expect(outbox.attempts).toBe(state.attempts);
+        expect(outbox.nextAttemptAt).toEqual(state.nextAttemptAt);
+        expect(outbox.publishedAt).toBeUndefined();
+        expect(outbox.isPending()).toBe(true);
+    });
 });
