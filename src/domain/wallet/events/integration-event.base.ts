@@ -34,7 +34,7 @@ export abstract class IntegrationEvent<T> {
             aggregateId: this.aggregateId,
             correlationId: this.correlationId,
             causationId: this.causationId,
-            occurredAt: this.occurredAt,
+            occurredAt: this.occurredAt.toISOString(),
             version: this.version,
             data: this.data,
         };
