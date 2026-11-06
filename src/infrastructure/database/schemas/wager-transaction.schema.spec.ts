@@ -13,6 +13,10 @@ describe('Schema - wager_transactions', () => {
     });
 
     afterAll(async () => {
+        await orm.em.getConnection().execute(`
+            drop schema public cascade;
+            create schema public;
+        `);
         await orm.close(true);
     });
 

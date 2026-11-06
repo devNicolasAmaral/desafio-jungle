@@ -13,6 +13,10 @@ describe('Schema - inbox_messages e outbox_messages', () => {
     });
 
     afterAll(async () => {
+        await orm.em.getConnection().execute(`
+            drop schema public cascade;
+            create schema public;
+        `);
         await orm.close(true);
     });
 

@@ -1,6 +1,6 @@
-import { IsEnum, isEnum, IsNotEmpty, IsOptional, isString, IsString, ValidateNested } from "class-validator";
-import { Type } from "class-transformer";
-import { WagerTransactionKind } from "../../domain/wallet/entities/wager-transaction.entity";
+import { IsEnum, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { WagerTransactionKind } from '../../domain/wallet/entities/wager-transaction.entity';
 
 class MoneyDto {
     @IsString()
@@ -42,11 +42,9 @@ export class ProcessWagerTransactionDto {
 
     @ValidateNested()
     @Type(() => MoneyDto)
-    money: MoneyDto
+    money: MoneyDto;
 
     @IsString()
     @IsOptional()
-    referenceExternalTransactionId: string;
-
-    
+    referenceExternalTransactionId?: string;
 }

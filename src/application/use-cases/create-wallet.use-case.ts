@@ -4,6 +4,9 @@ import { Wallet } from '../../domain/wallet/aggregates/wallet.aggregate';
 import { Money } from '../../domain/wallet/value-objects/money.value-object';
 import { WagerTransaction, WagerTransactionKind } from '../../domain/wallet/entities/wager-transaction.entity';
 import { WalletLedgerEntry, LedgerDirection } from '../../domain/wallet/entities/wallet-ledger-entry.entity';
+import { OutboxMessage } from '../../domain/wallet/entities/outbox-message.entity';
+import { WagerTransactionProcessed } from '../../domain/wallet/events/wager-transaction.events';
+import { WalletBalanceChanged } from '../../domain/wallet/events/wallet-balance-changed.event';
 
 export interface CreateWalletInput {
     playerId: string;
@@ -72,6 +75,25 @@ export class CreateWalletUseCase {
             balanceBefore: zeroMoney,
             balanceAfter: wallet.balance,
         });
+
+        const processedEvent = new WagerTransactionProcessed({
+            eventId: crypto.randomUUID(),
+            aggregateId: wallet.id,
+            correlationId: transaction.id,
+            occurredAt: new Date(),
+            data: {
+                transactionId: transaction.id,
+                walletId: wallet.id,
+                kind: transaction.kind,
+                status: transaction.status,
+                money: transaction.money.toJSON(),
+                newBalance: wallet.balance.toJSON(),
+            }
+        });
+        em.persist(OutboxMessage.enqueue(processedEvent) as any);
+
+        const balanceEvent = WalletBalanceChanged.from(wallet, ledgerEntry, transaction.id);
+        em.persist(OutboxMessage.enqueue(balanceEvent) as any);
 
         em.persist(transaction as any);
         em.persist(ledgerEntry as any);

@@ -5,7 +5,7 @@ import { Money } from '../../domain/wallet/value-objects/money.value-object';
 import { WagerTransaction, WagerTransactionKind } from '../../domain/wallet/entities/wager-transaction.entity';
 import { WalletLedgerEntry, LedgerDirection } from '../../domain/wallet/entities/wallet-ledger-entry.entity';
 import { OutboxMessage } from '../../domain/wallet/entities/outbox-message.entity';
-import { WagerTransactionProcessed, WagerTransactionPendingReference } from '../../domain/wallet/events/wager-transaction.events';
+import { WagerTransactionProcessed, WagerTransactionPendingReference, WagerTransactionRejected } from '../../domain/wallet/events/wager-transaction.events';
 import { WalletBalanceChanged } from '../../domain/wallet/events/wallet-balance-changed.event';
 
 export interface ProcessWagerTransactionInput {
@@ -94,8 +94,11 @@ export class ProcessWagerTransactionUseCase {
                     return transaction;
                 }
 
-                if (referenceTx.walletId !== wallet.id || !referenceTx.money.equals(input.money)) {
-                    throw new Error('A referência não pertence a esta carteira ou o valor é divergente.');
+                if (referenceTx.walletId !== wallet.id 
+                    || referenceTx.playerId !== input.playerId
+                    || referenceTx.roundId !== input.roundId
+                    || !referenceTx.money.equals(input.money)) {
+                    throw new Error('A referência não pertence a este jogador, carteira ou rodada, ou o valor é divergente.');
                 }
 
                 if (input.kind === WagerTransactionKind.Refund && referenceTx.kind !== WagerTransactionKind.Bet) {
@@ -109,19 +112,55 @@ export class ProcessWagerTransactionUseCase {
             }
 
             const balanceBefore = wallet.balance;
+            let rejectionCode: 'INSUFFICIENT_FUNDS' | 'REFERENCE_ALREADY_REVERTED' | null = null;
 
-            if (input.kind === WagerTransactionKind.Bet) {
-                wallet.debit(input.money);
-            } else if (input.kind === WagerTransactionKind.Win) {
-                wallet.credit(input.money);
-            } else if (input.kind === WagerTransactionKind.Refund) {
-                wallet.credit(input.money);
-            } else if (input.kind === WagerTransactionKind.Rollback && referenceTx) {
-                if (referenceTx.kind === WagerTransactionKind.Bet) {
-                    wallet.credit(input.money);
-                } else if (referenceTx.kind === WagerTransactionKind.Win) {
+            try {
+                if (input.kind === WagerTransactionKind.Bet) {
                     wallet.debit(input.money);
+                } else if (input.kind === WagerTransactionKind.Win) {
+                    wallet.credit(input.money);
+                } else if (input.kind === WagerTransactionKind.Refund) {
+                    wallet.credit(input.money);
+                } else if (input.kind === WagerTransactionKind.Rollback && referenceTx) {
+                    if (referenceTx.kind === WagerTransactionKind.Bet) {
+                        wallet.credit(input.money);
+                    } else if (referenceTx.kind === WagerTransactionKind.Win) {
+                        wallet.debit(input.money);
+                    } else if (referenceTx.kind === WagerTransactionKind.Refund) {
+                        wallet.debit(input.money);
+                    }
                 }
+            } catch (error: any) {
+                if (error.message === 'Saldo insuficiente.') {
+                    rejectionCode = input.kind === WagerTransactionKind.Bet
+                        ? 'INSUFFICIENT_FUNDS'
+                        : 'REFERENCE_ALREADY_REVERTED';
+                } else {
+                    throw error;
+                }
+            }
+
+            if (rejectionCode) {
+                transaction.reject(rejectionCode);
+                em.persist(transaction as any);
+
+                const rejectedEvent = new WagerTransactionRejected({
+                    eventId: crypto.randomUUID(),
+                    aggregateId: wallet.id,
+                    correlationId: transaction.id,
+                    occurredAt: new Date(),
+                    data: {
+                        transactionId: transaction.id,
+                        walletId: wallet.id,
+                        kind: transaction.kind,
+                        status: transaction.status,
+                        money: transaction.money.toJSON(),
+                        failureCode: rejectionCode,
+                    }
+                });
+                em.persist(OutboxMessage.enqueue(rejectedEvent) as any);
+                await em.flush();
+                return transaction;
             }
 
             transaction.markProcessed(referenceTx?.id, new Date());

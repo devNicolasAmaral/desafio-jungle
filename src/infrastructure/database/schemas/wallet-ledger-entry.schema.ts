@@ -14,7 +14,8 @@ export const WalletLedgerEntrySchema = new EntitySchema<any>({
             type: 'uuid'
         },
         transactionId: {
-            type: 'uuid'
+            type: 'uuid',
+            unique: true
         },
         direction: {
             type: 'string'
@@ -40,6 +41,5 @@ export const WalletLedgerEntrySchema = new EntitySchema<any>({
     },
     indexes: [
         { properties: ['walletId'] },
-        { properties: ['transactionId'] }
     ]
 });

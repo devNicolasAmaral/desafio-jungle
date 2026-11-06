@@ -2,6 +2,7 @@ import { EntityManager } from '@mikro-orm/postgresql';
 import { Wallet } from '../../../domain/wallet/aggregates/wallet.aggregate';
 import { WalletRepository } from '../../../domain/wallet/repositories/wallet.repository';
 import { WalletLedgerEntry } from '../../../domain/wallet/entities/wallet-ledger-entry.entity';
+import { WagerTransaction } from '../../../domain/wallet/entities/wager-transaction.entity';
 
 export class MikroOrmWalletRepository implements WalletRepository {
     constructor(private readonly em: EntityManager) {}
@@ -47,7 +48,19 @@ export class MikroOrmWalletRepository implements WalletRepository {
         await this.em.flush();
     }
 
-        async findLedgerByWalletId(walletId: string, limit: number, offset: number): Promise<WalletLedgerEntry[]> {
+    async findLedgerByWalletId(walletId: string, limit: number, offset: number): Promise<WalletLedgerEntry[]> {
         return this.em.find(WalletLedgerEntry as any, { walletId }, { limit, offset, orderBy: { createdAt: 'DESC' } }) as Promise<WalletLedgerEntry[]>;
+    }
+
+    async findAllLedgerByWalletId(walletId: string): Promise<WalletLedgerEntry[]> {
+        return this.em.find(WalletLedgerEntry as any, { walletId }) as Promise<WalletLedgerEntry[]>;
+    }
+
+    async findTransactionById(transactionId: string): Promise<WagerTransaction | null> {
+        return this.em.findOne(WagerTransaction as any, { id: transactionId }) as Promise<WagerTransaction | null>;
+    }
+
+    async findTransactionByExternalId(providerId: string, externalTransactionId: string): Promise<WagerTransaction | null> {
+        return this.em.findOne(WagerTransaction as any, { providerId, externalTransactionId }) as Promise<WagerTransaction | null>;
     }
 }

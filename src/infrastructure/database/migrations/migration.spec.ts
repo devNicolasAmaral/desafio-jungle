@@ -12,9 +12,11 @@ describe('Migration', () => {
             create schema public;
         `);
         await orm.migrator.up();
+        await orm.migrator.up();
     });
 
     afterAll(async () => {
+        await orm.migrator.down();
         await orm.migrator.down();
         await orm.close(true);
     });
@@ -59,6 +61,7 @@ describe('Migration', () => {
 
     it('deve remover todas as tabelas ao executar down', async () => {
         await orm.migrator.down();
+        await orm.migrator.down();
         
         const conn = orm.em.getConnection();
         const tables = await conn.execute(`
@@ -69,6 +72,7 @@ describe('Migration', () => {
         
         expect(tables.length).toBe(0);
         
+        await orm.migrator.up();
         await orm.migrator.up();
     });
 });

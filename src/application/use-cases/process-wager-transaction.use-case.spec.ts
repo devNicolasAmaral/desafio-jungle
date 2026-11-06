@@ -39,7 +39,7 @@ describe('ProcessWagerTransactionUseCase', () => {
         processUseCase = new ProcessWagerTransactionUseCase(em);
     });
 
-    it('deve processar apenas uma aposta e rejeitar a outra por saldo insuficiente', async () => {
+        it('deve processar apenas uma aposta e rejeitar a outra por saldo insuficiente', async () => {
         const bet80 = (id: string) => ({
             providerId: 'p1',
             externalTransactionId: id,
@@ -57,17 +57,27 @@ describe('ProcessWagerTransactionUseCase', () => {
             processUseCase.execute(bet80('tx-1')),
             processUseCase.execute(bet80('tx-2')),
         ]);
+        
+        const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<any>[];
+        expect(fulfilled.length).toBe(2);
 
-        const successes = results.filter(r => r.status === 'fulfilled');
-        
-        expect(successes.length).toBe(1);
-        
+        const processed = fulfilled.filter(r => r.value.status === 'PROCESSED');
+        const rejected = fulfilled.filter(r => r.value.status === 'REJECTED');
+
+        expect(processed.length).toBe(1);
+        expect(rejected.length).toBe(1);
+        expect(rejected[0].value.failureCode).toBe('INSUFFICIENT_FUNDS');
+
         const walletAfter = await em.findOne(Wallet as any, { id: walletId }) as Wallet;
         expect(walletAfter.balance.toJSON().amount).toBe('20.00');
 
         const ledgerEntries = await em.find(WalletLedgerEntry as any, { walletId }) as WalletLedgerEntry[];
         expect(ledgerEntries.length).toBe(2);
         expect(ledgerEntries.filter(l => l.direction === 'DEBIT').length).toBe(1);
+
+        const rejectedTxId = rejected[0].value.id;
+        const rejectedLedger = await em.find(WalletLedgerEntry as any, { transactionId: rejectedTxId }) as WalletLedgerEntry[];
+        expect(rejectedLedger.length).toBe(0);
     });
 
     it('deve processar 50 vezes a mesma aposta em paralelo e garantir idempotência', async () => {

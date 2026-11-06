@@ -2,7 +2,7 @@ import { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import config from '../../../../mikro-orm.config';
 
-describe('Schema - wallets e wallet_ledger_entries', () => {
+describe('Schema wallets e wallet_ledger_entries', () => {
     let orm: MikroORM;
     let sql: string;
 
@@ -13,6 +13,10 @@ describe('Schema - wallets e wallet_ledger_entries', () => {
     });
 
     afterAll(async () => {
+        await orm.em.getConnection().execute(`
+            drop schema public cascade;
+            create schema public;
+        `);
         await orm.close(true);
     });
 
@@ -85,6 +89,17 @@ describe('Schema - wallets e wallet_ledger_entries', () => {
             const insert = `
                 insert into wallets (id, player_id, currency, balance_amount, balance_currency, _version, created_at, _updated_at)
                 values (gen_random_uuid(), 'player-dup', 'BRL', '10.00', 'BRL', 1, now(), now())
+            `;
+            await conn.execute(insert);
+            await expect(conn.execute(insert)).rejects.toThrow();
+        });
+
+        it('deve rejeitar dois lançamentos para a mesma transação', async () => {
+            const conn = orm.em.getConnection();
+            const txId = '00000000-0000-4000-8000-000000000001';
+            const insert = `
+                insert into wallet_ledger_entries (id, wallet_id, transaction_id, direction, money_amount, money_currency, balance_before_amount, balance_before_currency, balance_after_amount, balance_after_currency, created_at)
+                values (gen_random_uuid(), gen_random_uuid(), '${txId}', 'CREDIT', '10.00', 'BRL', '0.00', 'BRL', '10.00', 'BRL', now())
             `;
             await conn.execute(insert);
             await expect(conn.execute(insert)).rejects.toThrow();
