@@ -50,6 +50,11 @@ export class ProcessWagerTransactionUseCase {
                 if (!existingTx.matchesPayload(input.payloadHash)) {
                     throw new Error('Conflito de idempotência: a chave já foi usada com um payload diferente.');
                 }
+
+                if (existingTx.status === WagerTransactionStatus.PendingReference) {
+                    return this.attemptProcessing(em, wallet, existingTx);
+                }
+
                 return { transaction: existingTx, idempotentReplay: true };
             }
 
@@ -68,15 +73,26 @@ export class ProcessWagerTransactionUseCase {
                 referenceExternalTransactionId: input.referenceExternalTransactionId,
             });
 
-            let referenceTx: WagerTransaction | null = null;
+            em.persist(transaction as any);
+            return this.attemptProcessing(em, wallet, transaction);
+        });
+    }
 
-            if (transaction.requiresReference()) {
-                referenceTx = await em.findOne(WagerTransaction as any, {
-                    providerId: input.providerId,
-                    externalTransactionId: input.referenceExternalTransactionId,
-                }) as WagerTransaction | null;
+    private async attemptProcessing(
+        em: EntityManager,
+        wallet: Wallet,
+        transaction: WagerTransaction,
+    ): Promise<ProcessWagerTransactionOutput> {
+        let referenceTx: WagerTransaction | null = null;
 
-                if (!referenceTx) {
+        if (transaction.requiresReference()) {
+            referenceTx = await em.findOne(WagerTransaction as any, {
+                providerId: transaction.providerId,
+                externalTransactionId: transaction.referenceExternalTransactionId,
+            }) as WagerTransaction | null;
+
+            if (!referenceTx) {
+                if (transaction.status !== WagerTransactionStatus.PendingReference) {
                     transaction.markPendingReference();
                     
                     const pendingEvent = new WagerTransactionPendingReference({
@@ -94,89 +110,35 @@ export class ProcessWagerTransactionUseCase {
                     });
                     
                     em.persist(OutboxMessage.enqueue(pendingEvent) as any);
-                    em.persist(transaction as any);
-                    await em.flush();
-                    return { transaction, idempotentReplay: false };
                 }
-
-                if (referenceTx.walletId !== wallet.id 
-                    || referenceTx.playerId !== input.playerId
-                    || referenceTx.roundId !== input.roundId
-                    || !referenceTx.money.equals(input.money)) {
-                    throw new Error('A referência não pertence a este jogador, carteira ou rodada, ou o valor é divergente.');
-                }
-
-                if (input.kind === WagerTransactionKind.Refund && referenceTx.kind !== WagerTransactionKind.Bet) {
-                    throw new Error('REFUND só pode referenciar uma BET.');
-                }
-                
-                if (input.kind === WagerTransactionKind.Rollback && 
-                   ![WagerTransactionKind.Bet, WagerTransactionKind.Win, WagerTransactionKind.Refund].includes(referenceTx.kind)) {
-                    throw new Error('ROLLBACK só pode referenciar BET, WIN ou REFUND.');
-                }
-
-                const existingReversal = await em.findOne(WagerTransaction as any, {
-                    _referenceTransactionId: referenceTx.id,
-                    kind: input.kind,
-                    _status: WagerTransactionStatus.Processed,
-                } as any) as WagerTransaction | null;
-
-                if (existingReversal) {
-                    transaction.reject('REFERENCE_ALREADY_REVERTED');
-                    em.persist(transaction as any);
-
-                    const rejectedEvent = new WagerTransactionRejected({
-                        eventId: crypto.randomUUID(),
-                        aggregateId: wallet.id,
-                        correlationId: transaction.id,
-                        occurredAt: new Date(),
-                        data: {
-                            transactionId: transaction.id,
-                            walletId: wallet.id,
-                            kind: transaction.kind,
-                            status: transaction.status,
-                            money: transaction.money.toJSON(),
-                            failureCode: 'REFERENCE_ALREADY_REVERTED',
-                        }
-                    });
-                    em.persist(OutboxMessage.enqueue(rejectedEvent) as any);
-                    await em.flush();
-                    return { transaction, idempotentReplay: false };
-                }
+                await em.flush();
+                return { transaction, idempotentReplay: false };
             }
 
-            const balanceBefore = wallet.balance;
-            let rejectionCode: 'INSUFFICIENT_FUNDS' | 'REVERSAL_INSUFFICIENT_FUNDS' | null = null;
-
-            try {
-                if (input.kind === WagerTransactionKind.Bet) {
-                    wallet.debit(input.money);
-                } else if (input.kind === WagerTransactionKind.Win) {
-                    wallet.credit(input.money);
-                } else if (input.kind === WagerTransactionKind.Refund) {
-                    wallet.credit(input.money);
-                } else if (input.kind === WagerTransactionKind.Rollback && referenceTx) {
-                    if (referenceTx.kind === WagerTransactionKind.Bet) {
-                        wallet.credit(input.money);
-                    } else if (referenceTx.kind === WagerTransactionKind.Win) {
-                        wallet.debit(input.money);
-                    } else if (referenceTx.kind === WagerTransactionKind.Refund) {
-                        wallet.debit(input.money);
-                    }
-                }
-            } catch (error: any) {
-                if (error.message === 'Saldo insuficiente.') {
-                    rejectionCode = input.kind === WagerTransactionKind.Bet
-                        ? 'INSUFFICIENT_FUNDS'
-                        : 'REVERSAL_INSUFFICIENT_FUNDS';
-                } else {
-                    throw error;
-                }
+            if (referenceTx.walletId !== wallet.id 
+                || referenceTx.playerId !== transaction.playerId
+                || referenceTx.roundId !== transaction.roundId
+                || !referenceTx.money.equals(transaction.money)) {
+                throw new Error('A referência não pertence a este jogador, carteira ou rodada, ou o valor é divergente.');
             }
 
-            if (rejectionCode) {
-                transaction.reject(rejectionCode);
-                em.persist(transaction as any);
+            if (transaction.kind === WagerTransactionKind.Refund && referenceTx.kind !== WagerTransactionKind.Bet) {
+                throw new Error('REFUND só pode referenciar uma BET.');
+            }
+            
+            if (transaction.kind === WagerTransactionKind.Rollback && 
+               ![WagerTransactionKind.Bet, WagerTransactionKind.Win, WagerTransactionKind.Refund].includes(referenceTx.kind)) {
+                throw new Error('ROLLBACK só pode referenciar BET, WIN ou REFUND.');
+            }
+
+            const existingReversal = await em.findOne(WagerTransaction as any, {
+                _referenceTransactionId: referenceTx.id,
+                kind: transaction.kind,
+                _status: WagerTransactionStatus.Processed,
+            } as any) as WagerTransaction | null;
+
+            if (existingReversal) {
+                transaction.reject('REFERENCE_ALREADY_REVERTED');
 
                 const rejectedEvent = new WagerTransactionRejected({
                     eventId: crypto.randomUUID(),
@@ -189,38 +151,48 @@ export class ProcessWagerTransactionUseCase {
                         kind: transaction.kind,
                         status: transaction.status,
                         money: transaction.money.toJSON(),
-                        failureCode: rejectionCode,
+                        failureCode: 'REFERENCE_ALREADY_REVERTED',
                     }
                 });
                 em.persist(OutboxMessage.enqueue(rejectedEvent) as any);
                 await em.flush();
                 return { transaction, idempotentReplay: false };
             }
+        }
 
-            transaction.markProcessed(referenceTx?.id, new Date());
+        const balanceBefore = wallet.balance;
+        let rejectionCode: 'INSUFFICIENT_FUNDS' | 'REVERSAL_INSUFFICIENT_FUNDS' | null = null;
 
-            em.persist(wallet as any);
-            em.persist(transaction as any);
-
-            let ledgerEntry: WalletLedgerEntry | null = null;
-
-            if (transaction.affectsBalance()) {
-                const direction = wallet.balance.isLessThan(balanceBefore) ? LedgerDirection.Debit : LedgerDirection.Credit;
-                
-                ledgerEntry = WalletLedgerEntry.create({
-                    id: crypto.randomUUID(),
-                    walletId: wallet.id,
-                    transactionId: transaction.id,
-                    direction: direction,
-                    money: input.money,
-                    balanceBefore: balanceBefore,
-                    balanceAfter: wallet.balance,
-                });
-
-                em.persist(ledgerEntry as any);
+        try {
+            if (transaction.kind === WagerTransactionKind.Bet) {
+                wallet.debit(transaction.money);
+            } else if (transaction.kind === WagerTransactionKind.Win) {
+                wallet.credit(transaction.money);
+            } else if (transaction.kind === WagerTransactionKind.Refund) {
+                wallet.credit(transaction.money);
+            } else if (transaction.kind === WagerTransactionKind.Rollback && referenceTx) {
+                if (referenceTx.kind === WagerTransactionKind.Bet) {
+                    wallet.credit(transaction.money);
+                } else if (referenceTx.kind === WagerTransactionKind.Win) {
+                    wallet.debit(transaction.money);
+                } else if (referenceTx.kind === WagerTransactionKind.Refund) {
+                    wallet.debit(transaction.money);
+                }
             }
+        } catch (error: any) {
+            if (error.message === 'Saldo insuficiente.') {
+                rejectionCode = transaction.kind === WagerTransactionKind.Bet
+                    ? 'INSUFFICIENT_FUNDS'
+                    : 'REVERSAL_INSUFFICIENT_FUNDS';
+            } else {
+                throw error;
+            }
+        }
 
-            const processedEvent = new WagerTransactionProcessed({
+        if (rejectionCode) {
+            transaction.reject(rejectionCode);
+
+            const rejectedEvent = new WagerTransactionRejected({
                 eventId: crypto.randomUUID(),
                 aggregateId: wallet.id,
                 correlationId: transaction.id,
@@ -231,18 +203,58 @@ export class ProcessWagerTransactionUseCase {
                     kind: transaction.kind,
                     status: transaction.status,
                     money: transaction.money.toJSON(),
-                    newBalance: wallet.balance.toJSON(),
+                    failureCode: rejectionCode,
                 }
             });
-            em.persist(OutboxMessage.enqueue(processedEvent) as any);
-
-            if (ledgerEntry) {
-                const balanceEvent = WalletBalanceChanged.from(wallet, ledgerEntry, transaction.id);
-                em.persist(OutboxMessage.enqueue(balanceEvent) as any);
-            }
-
+            em.persist(OutboxMessage.enqueue(rejectedEvent) as any);
             await em.flush();
             return { transaction, idempotentReplay: false };
+        }
+
+        transaction.markProcessed(referenceTx?.id, new Date());
+
+        em.persist(wallet as any);
+
+        let ledgerEntry: WalletLedgerEntry | null = null;
+
+        if (transaction.affectsBalance()) {
+            const direction = wallet.balance.isLessThan(balanceBefore) ? LedgerDirection.Debit : LedgerDirection.Credit;
+            
+            ledgerEntry = WalletLedgerEntry.create({
+                id: crypto.randomUUID(),
+                walletId: wallet.id,
+                transactionId: transaction.id,
+                direction: direction,
+                money: transaction.money,
+                balanceBefore: balanceBefore,
+                balanceAfter: wallet.balance,
+            });
+
+            em.persist(ledgerEntry as any);
+        }
+
+        const processedEvent = new WagerTransactionProcessed({
+            eventId: crypto.randomUUID(),
+            aggregateId: wallet.id,
+            correlationId: transaction.id,
+            occurredAt: new Date(),
+            data: {
+                transactionId: transaction.id,
+                walletId: wallet.id,
+                kind: transaction.kind,
+                status: transaction.status,
+                money: transaction.money.toJSON(),
+                newBalance: wallet.balance.toJSON(),
+            }
         });
+        em.persist(OutboxMessage.enqueue(processedEvent) as any);
+
+        if (ledgerEntry) {
+            const balanceEvent = WalletBalanceChanged.from(wallet, ledgerEntry, transaction.id);
+            em.persist(OutboxMessage.enqueue(balanceEvent) as any);
+        }
+
+        await em.flush();
+        return { transaction, idempotentReplay: false };
     }
 }

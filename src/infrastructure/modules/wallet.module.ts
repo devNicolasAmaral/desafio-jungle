@@ -8,6 +8,7 @@ import { HealthController } from '../controllers/health.controller';
 import { SqsPublisherService } from '../messaging/sqs-publisher.service';
 import { OutboxPublisherWorker } from '../workers/outbox-publisher.worker';
 import { SqsConsumerWorker } from '../workers/sqs-consumer.worker';
+import { PendingReferenceWorker } from '../workers/pending-reference.worker';
 
 @Module({
     controllers: [WalletController, WageringController, HealthController],
@@ -18,6 +19,7 @@ import { SqsConsumerWorker } from '../workers/sqs-consumer.worker';
         SqsPublisherService,
         OutboxPublisherWorker,
         SqsConsumerWorker,
+        PendingReferenceWorker,
     ],
 })
 export class WalletModule {}
