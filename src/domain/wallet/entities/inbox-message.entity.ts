@@ -9,7 +9,7 @@ export class InboxMessage {
         public readonly messageId: string,
         public readonly consumerName: string,
         public readonly payloadHash: string,
-        public readonly receiveAt: Date,
+        public readonly receivedAt: Date,
         private _processedAt?: Date,
     ) {}
 
