@@ -15,13 +15,13 @@ export class Wallet {
         public readonly id: string,
         public readonly playerId: string,
         public readonly currency: string,
-        public  _balance: Money,
-        public  _version: number,
+        public _balance: Money,
+        public _version: number,
         public readonly createdAt: Date,
-        public  _updatedAt: Date
+        public _updatedAt: Date,
     ) {}
 
-    public static open(props: { id: string; playerId: string; initialBalance: Money }) : Wallet {
+    public static open(props: { id: string; playerId: string; initialBalance: Money }): Wallet {
         const now = new Date();
         return new Wallet(
             props.id,
@@ -31,6 +31,18 @@ export class Wallet {
             1,
             now,
             now,
+        );
+    }
+
+    public static rehydrate(props: WalletProps): Wallet {
+        return new Wallet(
+            props.id,
+            props.playerId,
+            props.currency,
+            props.balance,
+            props.version,
+            props.createdAt,
+            props.updatedAt,
         );
     }
 
@@ -58,17 +70,17 @@ export class Wallet {
         this._updatedAt = new Date();
     }
 
-    private assertSameCurrency(money: Money): void {
-        if (this.currency !== money.currency) {
-            throw new Error(`Moedas diferentes: a carteira é em ${this.currency} e a operação em ${money.currency}.`);
-        }
-    }
-
     public credit(amount: Money): void {
         this.assertSameCurrency(amount);
 
         this._balance = this._balance.add(amount);
         this._version += 1;
         this._updatedAt = new Date();
+    }
+
+    private assertSameCurrency(money: Money): void {
+        if (this.currency !== money.currency) {
+            throw new Error(`Moedas diferentes: a carteira é em ${this.currency} e a operação em ${money.currency}.`);
+        }
     }
 }
