@@ -4,9 +4,10 @@ import { ProcessWagerTransactionUseCase } from '../../application/use-cases/proc
 import { MikroOrmWalletRepository } from '../database/repositories/wallet.repository';
 import { WalletController } from '../controllers/wallet.controller';
 import { WageringController } from '../controllers/wagering.controller';
+import { HealthController } from '../controllers/health.controller';
 
 @Module({
-    controllers: [WalletController, WageringController],
+    controllers: [WalletController, WageringController, HealthController],
     providers: [
         {
             provide: 'WalletRepository',
