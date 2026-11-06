@@ -1,6 +1,6 @@
 import { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import config from '../../../../mikro-orm.config';
+import config from '../../../mikro-orm.config';
 
 describe('Migration', () => {
     let orm: MikroORM;

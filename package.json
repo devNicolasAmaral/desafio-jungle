@@ -65,7 +65,7 @@
   },
   "mikro-orm": {
     "configPaths": [
-      "./mikro-orm.config.ts"
+      "./src/mikro-orm.config.ts"
     ]
   }
 }

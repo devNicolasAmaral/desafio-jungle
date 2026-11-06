@@ -1,6 +1,6 @@
 import { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import config from '../../../../mikro-orm.config';
+import config from '../../../mikro-orm.config';
 
 describe('Schema - inbox_messages e outbox_messages', () => {
     let orm: MikroORM;

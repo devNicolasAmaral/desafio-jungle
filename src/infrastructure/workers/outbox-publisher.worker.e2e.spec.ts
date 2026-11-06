@@ -1,7 +1,7 @@
 import { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { SQSClient, ReceiveMessageCommand, PurgeQueueCommand } from '@aws-sdk/client-sqs';
-import config from '../../../mikro-orm.config';
+import config from '../../mikro-orm.config';
 import { OutboxPublisherWorker } from './outbox-publisher.worker';
 import { SqsPublisherService } from '../messaging/sqs-publisher.service';
 import { OutboxMessage } from '../../domain/wallet/entities/outbox-message.entity';

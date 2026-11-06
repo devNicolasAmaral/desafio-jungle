@@ -1,6 +1,6 @@
 import { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import config from '../../../mikro-orm.config';
+import config from '../../mikro-orm.config';
 import { CreateWalletUseCase } from '../../application/use-cases/create-wallet.use-case';
 import { ProcessWagerTransactionUseCase } from '../../application/use-cases/process-wager-transaction.use-case';
 import { PendingReferenceWorker } from './pending-reference.worker';
