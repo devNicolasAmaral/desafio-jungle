@@ -1,6 +1,7 @@
 import { EntityManager } from '@mikro-orm/postgresql';
 import { Wallet } from '../../../domain/wallet/aggregates/wallet.aggregate';
 import { WalletRepository } from '../../../domain/wallet/repositories/wallet.repository';
+import { WalletLedgerEntry } from '../../../domain/wallet/entities/wallet-ledger-entry.entity';
 
 export class MikroOrmWalletRepository implements WalletRepository {
     constructor(private readonly em: EntityManager) {}
@@ -44,5 +45,9 @@ export class MikroOrmWalletRepository implements WalletRepository {
     async save(wallet: Wallet): Promise<void> {
         this.em.persist(wallet as any);
         await this.em.flush();
+    }
+
+        async findLedgerByWalletId(walletId: string, limit: number, offset: number): Promise<WalletLedgerEntry[]> {
+        return this.em.find(WalletLedgerEntry as any, { walletId }, { limit, offset, orderBy: { createdAt: 'DESC' } }) as Promise<WalletLedgerEntry[]>;
     }
 }
