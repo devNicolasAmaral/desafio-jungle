@@ -3,7 +3,10 @@ import { Wallet } from '../../../domain/wallet/aggregates/wallet.aggregate';
 import { WalletRepository } from '../../../domain/wallet/repositories/wallet.repository';
 import { WalletLedgerEntry } from '../../../domain/wallet/entities/wallet-ledger-entry.entity';
 import { WagerTransaction } from '../../../domain/wallet/entities/wager-transaction.entity';
+import { Injectable } from '@nestjs/common';
 
+
+@Injectable()
 export class MikroOrmWalletRepository implements WalletRepository {
     constructor(private readonly em: EntityManager) {}
 
