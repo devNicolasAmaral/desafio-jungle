@@ -30,7 +30,7 @@ export abstract class IntegrationEvent<T> {
     public toJSON() {
         return {
             eventId: this.eventId,
-            EventType: this.eventType,
+            eventType: this.eventType,
             aggregateId: this.aggregateId,
             correlationId: this.correlationId,
             causationId: this.causationId,

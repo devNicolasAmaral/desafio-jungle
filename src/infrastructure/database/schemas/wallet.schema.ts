@@ -24,7 +24,7 @@ export const WalletSchema = new EntitySchema<any>({
         },
         _version: { 
             type: 'integer',
-            version: true 
+            default: 1
         },
         createdAt: { 
             type: 'datetime' 
