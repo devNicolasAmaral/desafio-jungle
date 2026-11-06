@@ -57,8 +57,9 @@ export class SqsConsumerWorker implements OnModuleInit, OnModuleDestroy {
             if (response.Messages) {
                 for (const msg of response.Messages) {
                     try {
-                        await this.handleMessage(JSON.parse(msg.Body!), msg.MessageId!);
-                        
+                        const body = JSON.parse(msg.Body!);
+                        await this.handleMessage(body, msg.MessageId!);
+
                         await this.client.send(new DeleteMessageCommand({
                             QueueUrl: this.queueUrl,
                             ReceiptHandle: msg.ReceiptHandle!,
@@ -75,17 +76,26 @@ export class SqsConsumerWorker implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    private async handleMessage(body: any, messageId: string): Promise<void> {
+    private async handleMessage(body: any, sqsMessageId: string): Promise<void> {
         const consumerName = 'wager-transactions.fifo';
-        
+        const messageId = body.messageId;
+        const data = body.data;
+
+        if (!messageId) {
+            throw new Error(`Mensagem ${sqsMessageId} sem messageId no body`);
+        }
+        if (!data || !data.payloadHash) {
+            throw new Error(`Mensagem ${messageId} sem payloadHash no body`);
+        }
+
         return this.em.transactional(async (em) => {
-            let inbox = await em.findOne(InboxMessage as any, { 
-                messageId, 
-                consumerName 
-            }) as InboxMessage | null;
+            let inbox = await em.findOne(InboxMessage as any, { messageId, consumerName }) as InboxMessage | null;
 
             if (inbox?.isProcessed()) {
-                this.logger.debug(`Mensagem ${messageId} já processada. Ignorando (Inbox).`);
+                if (inbox.payloadHash !== data.payloadHash) {
+                    throw new Error(`Conflito no inbox: messageId ${messageId} processada com payload diferente`);
+                }
+                this.logger.debug(`Mensagem ${messageId} ja processada. Ignorando.`);
                 return;
             }
 
@@ -93,45 +103,33 @@ export class SqsConsumerWorker implements OnModuleInit, OnModuleDestroy {
                 inbox = InboxMessage.receive({
                     messageId,
                     consumerName,
-                    payloadHash: 'hash',
+                    payloadHash: data.payloadHash,
                 });
                 em.persist(inbox as any);
             }
 
-            try {
-                const data = body.data;
-                await this.processUseCase.execute({
-                    providerId: data.providerId,
-                    externalTransactionId: data.externalTransactionId,
-                    idempotencyKey: data.idempotencyKey,
-                    payloadHash: data.payloadHash || 'hash',
-                    walletId: data.walletId,
-                    playerId: data.playerId,
-                    roundId: data.roundId,
-                    gameId: data.gameId,
-                    kind: data.kind,
-                    money: Money.from({
-                        amount: data.money.amount,
-                        currency: data.money.currency,
-                    }),
-                    referenceExternalTransactionId: data.referenceExternalTransactionId,
-                }, em);
+            const result = await this.processUseCase.execute({
+                providerId: data.providerId,
+                externalTransactionId: data.externalTransactionId,
+                idempotencyKey: data.idempotencyKey,
+                payloadHash: data.payloadHash,
+                walletId: data.walletId,
+                playerId: data.playerId,
+                roundId: data.roundId,
+                gameId: data.gameId,
+                kind: data.kind,
+                money: Money.from({
+                    amount: data.money.amount,
+                    currency: data.money.currency,
+                }),
+                referenceExternalTransactionId: data.referenceExternalTransactionId,
+            }, em);
 
-                inbox.markProcessed(new Date());
-                em.persist(inbox as any);
-                await em.flush();
-                
-                this.logger.log(`Mensagem ${messageId} processada com sucesso.`);
-            } catch (error: any) {
-                if (error.message.includes('Saldo insuficiente') || error.message.includes('Conflito de idempotência')) {
-                    inbox.markProcessed(new Date());
-                    em.persist(inbox as any);
-                    await em.flush();
-                    this.logger.warn(`Mensagem ${messageId} rejeitada por regra de negócio: ${error.message}`);
-                    return;
-                }
-                throw error;
-            }
+            inbox.markProcessed(new Date());
+            em.persist(inbox as any);
+            await em.flush();
+
+            this.logger.log(`Mensagem ${messageId} processada com status ${result.transaction.status}.`);
         });
     }
 }

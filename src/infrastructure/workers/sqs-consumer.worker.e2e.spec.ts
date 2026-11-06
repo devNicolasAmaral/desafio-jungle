@@ -8,6 +8,7 @@ import { SqsConsumerWorker } from './sqs-consumer.worker';
 import { Money } from '../../domain/wallet/value-objects/money.value-object';
 import { Wallet } from '../../domain/wallet/aggregates/wallet.aggregate';
 import { WagerTransactionKind } from '../../domain/wallet/entities/wager-transaction.entity';
+import { InboxMessage } from '../../domain/wallet/entities/inbox-message.entity';
 
 describe('SqsConsumerWorker - E2E LocalStack', () => {
     let orm: MikroORM;
@@ -15,7 +16,7 @@ describe('SqsConsumerWorker - E2E LocalStack', () => {
     let worker: SqsConsumerWorker;
     let walletId: string;
     let sqsClient: SQSClient;
-    
+
     const queueUrl = 'http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/wager-transactions.fifo';
 
     beforeAll(async () => {
@@ -45,7 +46,7 @@ describe('SqsConsumerWorker - E2E LocalStack', () => {
     beforeEach(async () => {
         await orm.schema.clear();
         em = orm.em.fork();
-        
+
         const createWallet = new CreateWalletUseCase(em);
         const wallet = await createWallet.execute({
             playerId: 'player-e2e',
@@ -86,5 +87,55 @@ describe('SqsConsumerWorker - E2E LocalStack', () => {
 
         const walletAfter = await em.findOne(Wallet as any, { id: walletId }) as Wallet;
         expect(walletAfter.balance.toJSON().amount).toBe('80.00');
+
+        const inbox = await em.findOne(InboxMessage as any, { messageId: 'e2e-msg-1' }) as InboxMessage;
+        expect(inbox).not.toBeNull();
+        expect(inbox.isProcessed()).toBe(true);
+    });
+
+    it('deve ignorar redelivery de mensagem ja processada (inbox dedup)', async () => {
+        const messageBody = {
+            messageId: 'e2e-msg-dup',
+            type: 'WagerTransactionRequested',
+            data: {
+                providerId: 'p1',
+                externalTransactionId: 'ext-e2e-dup',
+                idempotencyKey: 'p1:ext-e2e-dup',
+                payloadHash: 'hash-dup',
+                walletId,
+                playerId: 'player-e2e',
+                roundId: 'r1',
+                gameId: 'g1',
+                kind: WagerTransactionKind.Bet,
+                money: { amount: '10.00', currency: 'BRL' },
+            }
+        };
+
+        await sqsClient.send(new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify(messageBody),
+            MessageGroupId: 'group-dup',
+            MessageDeduplicationId: 'dup-first',
+        }));
+
+        await worker.pollOnce();
+
+        const afterFirst = await em.findOne(Wallet as any, { id: walletId }) as Wallet;
+        expect(afterFirst.balance.toJSON().amount).toBe('90.00');
+
+        await sqsClient.send(new SendMessageCommand({
+            QueueUrl: queueUrl,
+            MessageBody: JSON.stringify(messageBody),
+            MessageGroupId: 'group-dup',
+            MessageDeduplicationId: 'dup-second',
+        }));
+
+        await worker.pollOnce();
+
+        const afterSecond = await em.findOne(Wallet as any, { id: walletId }) as Wallet;
+        expect(afterSecond.balance.toJSON().amount).toBe('90.00');
+
+        const inboxCount = await em.count(InboxMessage as any, { messageId: 'e2e-msg-dup' });
+        expect(inboxCount).toBe(1);
     });
 });
