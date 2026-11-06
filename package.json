@@ -61,9 +61,11 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.2"
   },
   "mikro-orm": {
+    "tsLoader": "tsx",
     "configPaths": [
       "./src/mikro-orm.config.ts"
     ]
