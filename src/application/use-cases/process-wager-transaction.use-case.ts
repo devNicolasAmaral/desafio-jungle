@@ -2,7 +2,7 @@ import { EntityManager, LockMode } from '@mikro-orm/postgresql';
 import { Injectable } from '@nestjs/common';
 import { Wallet } from '../../domain/wallet/aggregates/wallet.aggregate';
 import { Money } from '../../domain/wallet/value-objects/money.value-object';
-import { WagerTransaction, WagerTransactionKind } from '../../domain/wallet/entities/wager-transaction.entity';
+import { WagerTransaction, WagerTransactionKind, WagerTransactionStatus } from '../../domain/wallet/entities/wager-transaction.entity';
 import { WalletLedgerEntry, LedgerDirection } from '../../domain/wallet/entities/wallet-ledger-entry.entity';
 import { OutboxMessage } from '../../domain/wallet/entities/outbox-message.entity';
 import { WagerTransactionProcessed, WagerTransactionPendingReference, WagerTransactionRejected } from '../../domain/wallet/events/wager-transaction.events';
@@ -114,10 +114,39 @@ export class ProcessWagerTransactionUseCase {
                    ![WagerTransactionKind.Bet, WagerTransactionKind.Win, WagerTransactionKind.Refund].includes(referenceTx.kind)) {
                     throw new Error('ROLLBACK só pode referenciar BET, WIN ou REFUND.');
                 }
+
+                const existingReversal = await em.findOne(WagerTransaction as any, {
+                    _referenceTransactionId: referenceTx.id,
+                    kind: input.kind,
+                    _status: WagerTransactionStatus.Processed,
+                } as any) as WagerTransaction | null;
+
+                if (existingReversal) {
+                    transaction.reject('REFERENCE_ALREADY_REVERTED');
+                    em.persist(transaction as any);
+
+                    const rejectedEvent = new WagerTransactionRejected({
+                        eventId: crypto.randomUUID(),
+                        aggregateId: wallet.id,
+                        correlationId: transaction.id,
+                        occurredAt: new Date(),
+                        data: {
+                            transactionId: transaction.id,
+                            walletId: wallet.id,
+                            kind: transaction.kind,
+                            status: transaction.status,
+                            money: transaction.money.toJSON(),
+                            failureCode: 'REFERENCE_ALREADY_REVERTED',
+                        }
+                    });
+                    em.persist(OutboxMessage.enqueue(rejectedEvent) as any);
+                    await em.flush();
+                    return { transaction, idempotentReplay: false };
+                }
             }
 
             const balanceBefore = wallet.balance;
-            let rejectionCode: 'INSUFFICIENT_FUNDS' | 'REFERENCE_ALREADY_REVERTED' | null = null;
+            let rejectionCode: 'INSUFFICIENT_FUNDS' | 'REVERSAL_INSUFFICIENT_FUNDS' | null = null;
 
             try {
                 if (input.kind === WagerTransactionKind.Bet) {
@@ -139,7 +168,7 @@ export class ProcessWagerTransactionUseCase {
                 if (error.message === 'Saldo insuficiente.') {
                     rejectionCode = input.kind === WagerTransactionKind.Bet
                         ? 'INSUFFICIENT_FUNDS'
-                        : 'REFERENCE_ALREADY_REVERTED';
+                        : 'REVERSAL_INSUFFICIENT_FUNDS';
                 } else {
                     throw error;
                 }

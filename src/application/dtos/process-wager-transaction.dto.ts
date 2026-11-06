@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { WagerTransactionKind } from '../../domain/wallet/entities/wager-transaction.entity';
 
@@ -37,7 +37,13 @@ export class ProcessWagerTransactionDto {
     @IsNotEmpty()
     gameId: string;
 
-    @IsEnum(WagerTransactionKind)
+    @IsIn([
+        WagerTransactionKind.Bet,
+        WagerTransactionKind.Win,
+        WagerTransactionKind.Loss,
+        WagerTransactionKind.Refund,
+        WagerTransactionKind.Rollback,
+    ])
     kind: WagerTransactionKind;
 
     @ValidateNested()

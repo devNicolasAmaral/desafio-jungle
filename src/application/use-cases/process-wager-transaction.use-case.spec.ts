@@ -4,7 +4,7 @@ import config from '../../../mikro-orm.config';
 import { ProcessWagerTransactionUseCase } from './process-wager-transaction.use-case';
 import { CreateWalletUseCase } from './create-wallet.use-case';
 import { Money } from '../../domain/wallet/value-objects/money.value-object';
-import { WagerTransactionKind } from '../../domain/wallet/entities/wager-transaction.entity';
+import { WagerTransactionKind, WagerTransactionStatus } from '../../domain/wallet/entities/wager-transaction.entity';
 import { WalletLedgerEntry } from '../../domain/wallet/entities/wallet-ledger-entry.entity';
 import { Wallet } from '../../domain/wallet/aggregates/wallet.aggregate';
 
@@ -61,8 +61,8 @@ describe('ProcessWagerTransactionUseCase', () => {
         const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<any>[];
         expect(fulfilled.length).toBe(2);
 
-        const processed = fulfilled.filter(r => r.value.transaction.status === 'PROCESSED');
-        const rejected = fulfilled.filter(r => r.value.transaction.status === 'REJECTED');
+        const processed = fulfilled.filter(r => r.value.transaction.status === WagerTransactionStatus.Processed);
+        const rejected = fulfilled.filter(r => r.value.transaction.status === WagerTransactionStatus.Rejected);
 
         expect(processed.length).toBe(1);
         expect(rejected.length).toBe(1);
@@ -109,5 +109,105 @@ describe('ProcessWagerTransactionUseCase', () => {
 
         const debits = await em.find(WalletLedgerEntry as any, { walletId, direction: 'DEBIT' }) as WalletLedgerEntry[];
         expect(debits.length).toBe(1);
+    });
+
+    it('deve rejeitar REFUND duplicado da mesma BET', async () => {
+        const bet = await processUseCase.execute({
+            providerId: 'p1',
+            externalTransactionId: 'bet-orig',
+            idempotencyKey: 'p1:bet-orig',
+            payloadHash: 'hash-bet',
+            walletId,
+            playerId: 'player-race',
+            roundId: 'r1',
+            gameId: 'g1',
+            kind: WagerTransactionKind.Bet,
+            money: Money.from({ amount: '20.00', currency: 'BRL' }),
+        });
+        expect(bet.transaction.status).toBe(WagerTransactionStatus.Processed);
+
+        const refund1 = await processUseCase.execute({
+            providerId: 'p1',
+            externalTransactionId: 'refund-1',
+            idempotencyKey: 'p1:refund-1',
+            payloadHash: 'hash-refund-1',
+            walletId,
+            playerId: 'player-race',
+            roundId: 'r1',
+            gameId: 'g1',
+            kind: WagerTransactionKind.Refund,
+            money: Money.from({ amount: '20.00', currency: 'BRL' }),
+            referenceExternalTransactionId: 'bet-orig',
+        });
+        expect(refund1.transaction.status).toBe(WagerTransactionStatus.Processed);
+
+        const refund2 = await processUseCase.execute({
+            providerId: 'p1',
+            externalTransactionId: 'refund-2',
+            idempotencyKey: 'p1:refund-2',
+            payloadHash: 'hash-refund-2',
+            walletId,
+            playerId: 'player-race',
+            roundId: 'r1',
+            gameId: 'g1',
+            kind: WagerTransactionKind.Refund,
+            money: Money.from({ amount: '20.00', currency: 'BRL' }),
+            referenceExternalTransactionId: 'bet-orig',
+        });
+        expect(refund2.transaction.status).toBe(WagerTransactionStatus.Rejected);
+        expect(refund2.transaction.failureCode).toBe('REFERENCE_ALREADY_REVERTED');
+
+        const walletAfter = await em.findOne(Wallet as any, { id: walletId }) as Wallet;
+        expect(walletAfter.balance.toJSON().amount).toBe('100.00');
+
+        const refundLedgers = await em.find(WalletLedgerEntry as any, { walletId, direction: 'CREDIT' }) as WalletLedgerEntry[];
+        expect(refundLedgers.length).toBe(2);
+    });
+
+    it('deve rejeitar ROLLBACK duplicado da mesma BET', async () => {
+        const bet = await processUseCase.execute({
+            providerId: 'p1',
+            externalTransactionId: 'bet-rb',
+            idempotencyKey: 'p1:bet-rb',
+            payloadHash: 'hash-bet-rb',
+            walletId,
+            playerId: 'player-race',
+            roundId: 'r1',
+            gameId: 'g1',
+            kind: WagerTransactionKind.Bet,
+            money: Money.from({ amount: '30.00', currency: 'BRL' }),
+        });
+        expect(bet.transaction.status).toBe(WagerTransactionStatus.Processed);
+
+        const rb1 = await processUseCase.execute({
+            providerId: 'p1',
+            externalTransactionId: 'rb-1',
+            idempotencyKey: 'p1:rb-1',
+            payloadHash: 'hash-rb-1',
+            walletId,
+            playerId: 'player-race',
+            roundId: 'r1',
+            gameId: 'g1',
+            kind: WagerTransactionKind.Rollback,
+            money: Money.from({ amount: '30.00', currency: 'BRL' }),
+            referenceExternalTransactionId: 'bet-rb',
+        });
+        expect(rb1.transaction.status).toBe(WagerTransactionStatus.Processed);
+
+        const rb2 = await processUseCase.execute({
+            providerId: 'p1',
+            externalTransactionId: 'rb-2',
+            idempotencyKey: 'p1:rb-2',
+            payloadHash: 'hash-rb-2',
+            walletId,
+            playerId: 'player-race',
+            roundId: 'r1',
+            gameId: 'g1',
+            kind: WagerTransactionKind.Rollback,
+            money: Money.from({ amount: '30.00', currency: 'BRL' }),
+            referenceExternalTransactionId: 'bet-rb',
+        });
+        expect(rb2.transaction.status).toBe(WagerTransactionStatus.Rejected);
+        expect(rb2.transaction.failureCode).toBe('REFERENCE_ALREADY_REVERTED');
     });
 });
