@@ -99,4 +99,34 @@ describe('Wallet Aggregate Root', () => {
         expect(() => wallet.debit(usdMoney)).toThrow('Moedas diferentes: a carteira é em BRL e a operação em USD.');
         expect(() => wallet.credit(usdMoney)).toThrow(`Moedas diferentes: a carteira é em ${wallet.currency} e a operação em ${usdMoney.currency}.`);
     });
+
+    it('deve rejeitar abertura de carteira com saldo inicial negativo', () => {
+        const negative = Money.from({ amount: '100.00', currency: 'BRL' }).negate();
+
+        expect(() => Wallet.open({
+            id: 'wallet-1',
+            playerId: 'player-1',
+            initialBalance: negative,
+        })).toThrow('O saldo inicial da carteira não pode ser negativo.');
+    });
+
+    it('deve rejeitar débito com valor zero', () => {
+        const wallet = Wallet.open({
+            id: 'wallet-1',
+            playerId: 'player-1',
+            initialBalance: Money.from({ amount: '100.00', currency: 'BRL' }),
+        });
+
+        expect(() => wallet.debit(Money.zero('BRL'))).toThrow('O valor do débito deve ser positivo.');
+    });
+
+    it('deve rejeitar crédito com valor zero', () => {
+        const wallet = Wallet.open({
+            id: 'wallet-1',
+            playerId: 'player-1',
+            initialBalance: Money.from({ amount: '100.00', currency: 'BRL' }),
+        });
+
+        expect(() => wallet.credit(Money.zero('BRL'))).toThrow('O valor do crédito deve ser positivo.');
+    });
 });

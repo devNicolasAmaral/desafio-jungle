@@ -22,6 +22,10 @@ export class Wallet {
     ) {}
 
     public static open(props: { id: string; playerId: string; initialBalance: Money }): Wallet {
+        if (props.initialBalance.isNegative()) {
+            throw new Error('O saldo inicial da carteira não pode ser negativo.');
+        }
+
         const now = new Date();
         return new Wallet(
             props.id,
@@ -61,6 +65,10 @@ export class Wallet {
     public debit(amount: Money): void {
         this.assertSameCurrency(amount);
 
+        if (!amount.isPositive()) {
+            throw new Error('O valor do débito deve ser positivo.');
+        }
+
         if (this._balance.isLessThan(amount)) {
             throw new Error('Saldo insuficiente.');
         }
@@ -72,6 +80,10 @@ export class Wallet {
 
     public credit(amount: Money): void {
         this.assertSameCurrency(amount);
+
+        if (!amount.isPositive()) {
+            throw new Error('O valor do crédito deve ser positivo.');
+        }
 
         this._balance = this._balance.add(amount);
         this._version += 1;
