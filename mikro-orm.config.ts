@@ -11,12 +11,17 @@ export default defineConfig({
     entitiesTs: ['./src/infrastructure/database/schemas/*.schema.ts'],
     extensions: [Migrator],
     dynamicImportProvider: (id) => import(id),
+    debug: process.env.NODE_ENV !== 'production',
+    ignoreUndefinedInQuery: true,
+    schemaGenerator: {
+        ignoreTriggers: true,
+        ignoreRoutines: true,
+    },
     migrations: {
         path: './dist/infrastructure/database/migrations',
         pathTs: './src/infrastructure/database/migrations',
-        glob: '!(*.spec).{js,ts}', 
+        glob: '!(*.spec).{js,ts}',
         disableForeignKeys: false,
+        snapshotOnMigrate: false,
     },
-    debug: process.env.NODE_ENV !== 'production',
-    ignoreUndefinedInQuery: true,
 });

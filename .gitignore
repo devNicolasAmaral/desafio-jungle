@@ -60,6 +60,3 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # LocalStack
 /volume
-
-# MikroORM snapshot (regenerated on demand)
-.snapshot-*.json
