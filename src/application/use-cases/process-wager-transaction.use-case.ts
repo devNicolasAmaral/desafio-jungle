@@ -26,8 +26,9 @@ export interface ProcessWagerTransactionInput {
 export class ProcessWagerTransactionUseCase {
     constructor(private readonly em: EntityManager) {}
 
-    async execute(input: ProcessWagerTransactionInput): Promise<WagerTransaction> {
-        return this.em.transactional(async (em) => {
+    async execute(input: ProcessWagerTransactionInput, externalEm?: EntityManager): Promise<WagerTransaction> {
+        const manager = externalEm || this.em;
+        return manager.transactional(async (em) => {
             const wallet = await em.findOne(Wallet as any, { id: input.walletId }, {
                 lockMode: LockMode.PESSIMISTIC_WRITE
             }) as Wallet | null;
