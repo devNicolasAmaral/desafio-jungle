@@ -1,56 +1,65 @@
-# Decisões de Arquitetura
-
-Este documento descreve as principais decisões técnicas tomadas durante o desenvolvimento do desafio, focando em garantir a consistência financeira, idempotência e concorrência.
+# Decisões de Arquitetura 
+Este documento descreve as principais decisões técnicas tomadas durante o desenvolvimento do serviço, focando no cumprimento estrito dos requisitos de consistência financeira, idempotência, concorrência e resiliência a falhas definidos pelo desafio da Jungle Gaming.
 
 ## 1. Autenticação
 
-**Decisão:** A autenticação foi **intencionalmente deixada de fora** do escopo desta implementação, conforme permitido pelo edital do desafio.
+**Decisão:** A autenticação foi intencionalmente deixada fora do escopo de implementação, conforme permissão explícita no edital.
+**Desenho Arquitetural Adotado:** A arquitetura foi preparada para integração com um Identity Provider (IdP) externo e compatível com OIDC (como Keycloak ou Zitadel). 
+*   **Ponto de Extensão:** A aplicação prevê um `AuthGuard` global configurado no NestJS que interceptaria os tokens JWT (Bearer) validando-os contra as chaves públicas do IdP.
+*   **Exceções:** Os endpoints de monitoramento (`/health/live` e `/health/ready`) são explicitamente isentos dessa validação para permitir o funcionamento correto de probes do Kubernetes ou do Docker Compose.
 
-**Desenho proposto:** A arquitetura foi pensada para integrar um Identity Provider (IdP) externo, como Keycloak ou Zitadel. Para isso, seria adicionado um `AuthGuard` global no NestJS, protegendo todos os endpoints, exceto os de health check (`/health/live` e `/health/ready`), que devem permanecer abertos para monitoramento da infraestrutura. O token JWT (Bearer) seria validado contra as chaves públicas do IdP.
+## 2. ORM e Mapeamento de Domínio
 
-## 2. ORM e Mapeamento de Dados
+**Decisão:** Utilização do **MikroORM**.
+**Justificativa:** O MikroORM foi adotado por prover um Unit of Work (UoW) e um Identity Map nativos. O controle transacional explícito (`em.transactional()`) foi fundamental para garantir que as mutações na `Wallet`, os registros no `WalletLedgerEntry` e as operações de `Inbox`/`Outbox` ocorram sob a mesma transação ACID no PostgreSQL.
+**Mapeamento do Objeto de Valor (Money):** O `Money` é tratado estritamente como um *Value Object* no domínio e mapeado como `embeddable` no MikroORM. Ele não possui tabela própria; seus campos (`amount` como string decimal e `currency`) são embutidos nas entidades proprietárias. Isso blinda o núcleo financeiro de vazamentos de infraestrutura e evita problemas clássicos de precisão flutuante.
 
-**Decisão:** Foi utilizado o **MikroORM**.
+## 3. Concorrência e Consistência Financeira
 
-**Justificativa:** O MikroORM foi escolhido por oferecer um Unit of Work explícito e um bom controle transacional (através de `em.transactional()`), que são cruciais para garantir a atomicidade entre a carteira, o ledger, o inbox e o outbox.
+**Decisão:** Estratégia de Bloqueio Pessimista (`PESSIMISTIC_WRITE`) ancorada na `walletId`.
+**Justificativa:** O sistema precisa garantir corretude mesmo quando múltiplas instâncias processam transações simultâneas para a mesma carteira. O bloqueio pessimista a nível de banco de dados força a serialização das operações concorrentes para a mesma wallet. 
+*   **Como funciona:** A primeira requisição adquire o lock na linha da tabela `wallets`. Requisições subsequentes para a mesma wallet aguardam a liberação do lock (commit/rollback).
+*   **Por que não otimista?** Em cenários de alta disputa (hot wallets), o bloqueio otimista geraria um volume excessivo de *retries* de aplicação e falhas (`StaleObjectStateException`), degradando o throughput geral. O lock pessimista previne efetivamente o *lost update* de forma determinística e segura.
 
-**Mapeamento do Money:** A classe `Money` é um Value Object no domínio e foi mapeada como `embeddable`. Isso significa que ela não gera uma tabela própria no banco. Em vez disso, suas propriedades (`amount` e `currency`) são mapeadas para colunas na tabela da entidade que a contém (ex: `balance_amount` e `balance_currency` na tabela `wallets`), garantindo tipagem forte no TypeScript e precisão no banco.
+## 4. Idempotência Persistente
 
-## 3. Concorrência
+**Decisão:** Garantia de unicidade no banco de dados via constraint e validação de hash.
+**Justificativa:** A idempotência em memória ou cache (ex: Redis) não é confiável em cenários de crash do sistema. A idempotência foi ancorada no PostgreSQL através da coluna `idempotency_key` na tabela de transações.
+*   **Mecanismo:** A chave é recebida via header `Idempotency-Key`. A aplicação gera um `payloadHash` (SHA-256) baseado em um JSON canônico (chaves ordenadas alfabeticamente) contendo apenas os dados de negócio.
+*   **Replay vs Conflito:** Se a chave já existe e o `payloadHash` coincide, o sistema devolve o estado previamente processado (Replay). Se a chave existe, mas o hash difere, caracteriza-se uma violação de contrato e um conflito HTTP 409 é retornado.
 
-**Decisão:** Foi adotada a estratégia de **bloqueio pessimista** (`PESSIMISTIC_WRITE`) nas operações que alteram o saldo da carteira.
+## 5. Mensageria, Resiliência e DLQ
 
-**Justificativa:** Como o sistema pode receber múltiplas requisições simultâneas para a mesma carteira, o bloqueio pessimista garante que apenas uma transação por vez possa ler e alterar o saldo daquela carteira específica. Isso evita o problema de lost update sem a complexidade de gerenciar retries de concorrência otimista, garantindo que o saldo nunca fique negativo e que o ledger seja sempre preciso.
+**Decisão:** Consumo resiliente com padrão Inbox/Outbox transacional.
+**Justificativa:** Para mitigar falhas temporárias e garantir consistência distribuída:
+*   **Inbox:** Deduplica mensagens SQS recebidas, participando da transação SQL de negócio. O `ack` da mensagem na fila do SQS só ocorre *após* o commit bem-sucedido no banco de dados.
+*   **Outbox:** Eventos de integração são salvos no banco na mesma transação. Um worker assíncrono independente consome a tabela Outbox e publica para os brokers, garantindo entrega *at-least-once*.
+*   **Dead Letter Queue (DLQ):** Configurada nativamente no SQS através de uma `RedrivePolicy`. Mensagens que causam falhas repetidas (erros transitórios de infraestrutura que excedem o `maxReceiveCount`) são movidas automaticamente para a fila `.dlq.fifo` sem comprometer o fluxo das mensagens saudáveis. Falhas de domínio (ex: saldo insuficiente) não vão para a DLQ, pois recebem um *ack* após serem marcadas como `REJECTED`.
+*   **Graceful Shutdown:** Interceptores de ciclo de vida (`SIGTERM`/`SIGINT`) foram implementados. Workers em execução concluem suas rotinas transacionais ativas ou não efetuam o `ack` no SQS (devolvendo a visibilidade da mensagem) e drenam conexões de banco de dados de forma segura antes da terminação do contêiner.
 
-## 4. Idempotência
+## 6. Referências Fora de Ordem (Tempo Temporal)
 
-**Decisão:** A idempotência é garantida no banco de dados através de uma constraint de unicidade (`UNIQUE`) na coluna `idempotency_key` da tabela `wager_transactions`.
+**Decisão:** Enfileiramento interno com status `PENDING_REFERENCE` e repetição com Backoff.
+**Justificativa:** Em sistemas distribuídos assíncronos (entrega *at-least-once*), operações dependentes (como `REFUND` ou `ROLLBACK`) podem chegar antes das originais (`BET` ou `WIN`). 
+*   **Mecanismo:** Ao invés de falhar imediatamente, o sistema persiste a transação como `PENDING_REFERENCE`. Um worker temporizado inspeciona periodicamente essas transações, aplicando um *backoff* exponencial.
+*   **TTL (Time to Live):** Estabeleceu-se um limite de 5 minutos para a resolução da referência. Considerou-se que atrasos acima dessa janela configuram anomalia definitiva (mensagem perdida pelo provider). Excedido o TTL, a transação recebe o status terminal `REJECTED` com um erro de referência.
 
-**Como funciona:** O header `Idempotency-Key` é obrigatório. A API calcula um hash (SHA-256) de um JSON canônico do payload da requisição (com as chaves ordenadas alfabeticamente). Se a chave já existir no banco:
-- Se o hash for o mesmo, a API retorna a resposta original (replay).
-- Se o hash for diferente, a API retorna um erro de conflito (HTTP 409), impedindo que a mesma chave seja usada para operações diferentes.
+## 7. Códigos de Falha (FailureCode)
 
-## 5. Processamento Assíncrono e Referências (TTL)
+Foi definida uma taxonomia clara para que clientes e provedores possam automatizar suas decisões:
+*   `INSUFFICIENT_FUNDS`: Débito rejeitado por saldo insuficiente.
+*   `REFERENCE_NOT_FOUND`: Rejeição definitiva após esgotamento do TTL (referência nunca chegou).
+*   `INVALID_REFERENCE_TYPE`: Violação de regra (ex: tentar aplicar um `REFUND` sobre um `WIN`).
+*   `REFERENCE_ALREADY_REVERTED`: Prevenção de reversão dupla.
+*   `REVERSAL_INSUFFICIENT_FUNDS`: Distinção clara — a reversão de um crédito resultaria em saldo negativo. É semanticamente diferente de não ter fundos para apostar.
 
-**Decisão:** O `PendingReferenceWorker` varre o banco a cada 30 segundos em busca de transações com status `PENDING_REFERENCE`. 
+## 8. Observabilidade
 
-**TTL de 5 minutos:** O worker aguarda até 5 minutos antes de rejeitar uma transação por falta de referência. Esse tempo foi escolhido como um equilíbrio: é longo o suficiente para absorver atrasos normais de rede ou processamento entre provedores, mas curto o suficiente para não deixar fundos travados indefinidamente caso o provedor tenha enviado uma referência que nunca vai existir.
+**Decisão:** Logs estruturados em formato JSON e Health Checks explícitos.
+*   **Logs:** Substituiu-se o logger textual padrão por logs JSON puros, inserindo campos de contexto vitais (`correlationId`, `walletId`, `transactionId`, `providerId`) exigidos para tracing em sistemas distribuídos, mascarando dados financeiros sensíveis.
+*   **Health:** Endpoints nativos e segregados: `live` para saúde do processo, e `ready` para validação ativa de conexão com DB e Broker SQS.
 
-Se o TTL expirar, a transação é rejeitada com o `failureCode` `REFERENCE_NOT_FOUND` e um evento de rejeição é publicado no Outbox.
+## 9. Trade-offs Assumidos
 
-## 6. Failure Codes
-
-Para que os provedores saibam exatamente o motivo de uma rejeição, foram definidos os seguintes `failureCode`s:
-- `INSUFFICIENT_FUNDS`: Tentativa de aposta sem saldo suficiente.
-- `REFERENCE_NOT_FOUND`: A transação de referência não foi encontrada dentro do TTL.
-- `INVALID_REFERENCE_TYPE`: Tentativa de estornar o tipo errado (ex: REFUND em uma WIN).
-- `REFERENCE_ALREADY_REVERTED`: Tentativa de estornar uma transação que já foi revertida.
-- `REVERSAL_INSUFFICIENT_FUNDS`: Tentativa de reverter um ganho (WIN) que já foi gasto.
-- `CURRENCY_MISMATCH` / `AMOUNT_MISMATCH`: Divergência entre a transação de reversão e a original.
-
-## 7. Trade-offs e Limitações
-
-Para priorizar a estabilidade do núcleo financeiro dentro do prazo, algumas features não foram implementadas:
-- **Dead Letter Queue (DLQ) explícita:** O consumidor SQS não possui uma rotina de movimentação explícita para DLQ após X falhas.
-- **Graceful Shutdown:** Os workers não aguardam o término das tarefas em andamento ao receber um sinal `SIGTERM`.
-- **Logs Estruturados:** Os logs utilizam o `Logger` padrão do NestJS, sem formatação JSON.
+1.  **Polling Interval do Worker de Outbox:** Para não sobrecarregar o PostgreSQL com consultas em excesso na tabela de Outbox, estabeleceu-se um intervalo de *polling*. O trade-off é a inserção de uma ligeira latência (milissegundos) na propagação dos eventos de integração, considerada aceitável frente ao ganho de estabilidade no BD.
+2.  **Múltiplas Moedas:** Embora o domínio `Money` suporte validação cruzada para garantir a integridade entre diferentes moedas e isole seus comportamentos, o foco de validação e implantação atual assume um fluxo de operação majoritariamente centrado em `BRL` (Real) para reduzir a superfície dos testes unitários sobre conversões de câmbio que escapam do núcleo contábil exigido.
