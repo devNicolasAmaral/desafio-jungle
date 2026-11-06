@@ -1,6 +1,6 @@
 import { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { SQSClient, ReceiveMessageCommand } from '@aws-sdk/client-sqs';
+import { SQSClient, ReceiveMessageCommand, PurgeQueueCommand } from '@aws-sdk/client-sqs';
 import config from '../../../mikro-orm.config';
 import { OutboxPublisherWorker } from './outbox-publisher.worker';
 import { SqsPublisherService } from '../messaging/sqs-publisher.service';
@@ -28,6 +28,8 @@ describe('OutboxPublisherWorker - E2E LocalStack', () => {
             endpoint: 'http://localhost:4566',
             credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
         });
+
+        await sqsClient.send(new PurgeQueueCommand({ QueueUrl: queueUrl }));
     });
 
     afterAll(async () => {
@@ -40,12 +42,12 @@ describe('OutboxPublisherWorker - E2E LocalStack', () => {
     beforeEach(async () => {
         await orm.schema.clear();
         em = orm.em.fork();
-        
+
         const publisher = new SqsPublisherService();
         worker = new OutboxPublisherWorker(em, publisher);
     });
 
-    it('deve ler da outbox e publicar no LocalStack SQS', async () => {
+    it('deve ler da outbox, publicar no LocalStack SQS e marcar como publicado', async () => {
         const event = new WagerTransactionProcessed({
             eventId: '11111111-1111-4111-8111-111111111111',
             aggregateId: 'wallet-1',
@@ -61,7 +63,6 @@ describe('OutboxPublisherWorker - E2E LocalStack', () => {
         });
 
         const outbox = OutboxMessage.enqueue(event);
-        
         em.persist(outbox as any);
         await em.flush();
 
@@ -69,5 +70,18 @@ describe('OutboxPublisherWorker - E2E LocalStack', () => {
 
         const updatedOutbox = await em.findOne(OutboxMessage as any, { id: '11111111-1111-4111-8111-111111111111' }) as OutboxMessage;
         expect(updatedOutbox.publishedAt).not.toBeNull();
+
+        const response = await sqsClient.send(new ReceiveMessageCommand({
+            QueueUrl: queueUrl,
+            MaxNumberOfMessages: 1,
+            WaitTimeSeconds: 2,
+        }));
+
+        expect(response.Messages).toBeDefined();
+        expect(response.Messages!.length).toBe(1);
+
+        const body = JSON.parse(response.Messages![0].Body!);
+        expect(body.eventType).toBe('WagerTransactionProcessed');
+        expect(body.data.transactionId).toBe('tx-1');
     });
 });
