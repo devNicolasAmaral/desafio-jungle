@@ -5,20 +5,18 @@ import { MikroOrmWalletRepository } from '../database/repositories/wallet.reposi
 import { WalletController } from '../controllers/wallet.controller';
 import { WageringController } from '../controllers/wagering.controller';
 import { HealthController } from '../controllers/health.controller';
+import { SqsPublisherService } from '../messaging/sqs-publisher.service';
+import { OutboxPublisherWorker } from '../workers/outbox-publisher.worker';
 
 @Module({
     controllers: [WalletController, WageringController, HealthController],
     providers: [
-        {
-            provide: 'WalletRepository',
-            useClass: MikroOrmWalletRepository,
-        },
+        { provide: 'WalletRepository', useClass: MikroOrmWalletRepository },
         CreateWalletUseCase,
         ProcessWagerTransactionUseCase,
+        SqsPublisherService,
+        OutboxPublisherWorker,
     ],
-    exports: [
-        CreateWalletUseCase,
-        
-    ],
+    exports: [CreateWalletUseCase],
 })
 export class WalletModule {}
