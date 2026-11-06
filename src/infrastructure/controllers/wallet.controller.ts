@@ -1,4 +1,15 @@
-import { BadRequestException, Body, Controller, Get, Inject, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import {
+    BadRequestException,
+    Body,
+    ConflictException,
+    Controller,
+    Get,
+    Inject,
+    NotFoundException,
+    Param,
+    Post,
+    Query,
+} from '@nestjs/common';
 import { CreateWalletUseCase } from '../../application/use-cases/create-wallet.use-case';
 import { CreateWalletDto } from '../../application/dtos/create-wallet.dto';
 import { Money } from '../../domain/wallet/value-objects/money.value-object';
@@ -29,20 +40,34 @@ export class WalletController {
 
     @Post()
     async create(@Body() dto: CreateWalletDto) {
-        const wallet = await this.createWalletUseCase.execute({
-            playerId: dto.playerId,
-            initialBalance: Money.from({
+        let initialBalance: Money;
+        try {
+            initialBalance = Money.from({
                 amount: dto.initialBalance.amount,
                 currency: dto.initialBalance.currency,
-            }),
-        });
+            });
+        } catch (error: any) {
+            throw new BadRequestException(error.message);
+        }
 
-        return {
-            id: wallet.id,
-            playerId: wallet.playerId,
-            balance: wallet.balance.toJSON(),
-            version: wallet.version,
-        };
+        try {
+            const wallet = await this.createWalletUseCase.execute({
+                playerId: dto.playerId,
+                initialBalance,
+            });
+
+            return {
+                id: wallet.id,
+                playerId: wallet.playerId,
+                balance: wallet.balance.toJSON(),
+                version: wallet.version,
+            };
+        } catch (error: any) {
+            if (error.message.includes('Já existe uma carteira')) {
+                throw new ConflictException(error.message);
+            }
+            throw error;
+        }
     }
 
     @Get(':walletId')
@@ -66,7 +91,6 @@ export class WalletController {
         @Query('cursor') cursor?: string,
         @Query('limit') limit: string = '50',
     ) {
-        
         const wallet = await this.walletRepository.findById(walletId);
         if (!wallet) {
             throw new NotFoundException('Carteira não encontrada.');

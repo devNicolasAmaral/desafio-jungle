@@ -1,5 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { EntityManager } from '@mikro-orm/postgresql';
+import type { Response } from 'express';
 
 @Controller('health')
 export class HealthController {
@@ -11,12 +12,22 @@ export class HealthController {
     }
 
     @Get('ready')
-    async ready() {
+    async ready(@Res({ passthrough: true }) res: Response) {
+        let database: 'connected' | 'disconnected' = 'disconnected';
         try {
             await this.em.getConnection().execute('select 1');
-            return { status: 'ok', database: 'connected', messaging: 'connected' };
+            database = 'connected';
         } catch {
-            return { status: 'degraded', database: 'disconnected', messaging: 'unknown' };
+            database = 'disconnected';
         }
+
+        const messaging = process.env.SQS_ENDPOINT ? 'connected' : 'mock';
+
+        if (database === 'disconnected') {
+            res.status(HttpStatus.SERVICE_UNAVAILABLE);
+            return { status: 'degraded', database, messaging };
+        }
+
+        return { status: 'ok', database, messaging };
     }
 }

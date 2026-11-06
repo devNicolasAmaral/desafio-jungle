@@ -19,6 +19,5 @@ import { SqsConsumerWorker } from '../workers/sqs-consumer.worker';
         OutboxPublisherWorker,
         SqsConsumerWorker,
     ],
-    exports: [CreateWalletUseCase],
 })
 export class WalletModule {}
