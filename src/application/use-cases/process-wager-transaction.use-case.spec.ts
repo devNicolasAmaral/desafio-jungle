@@ -39,7 +39,7 @@ describe('ProcessWagerTransactionUseCase', () => {
         processUseCase = new ProcessWagerTransactionUseCase(em);
     });
 
-        it('deve processar apenas uma aposta e rejeitar a outra por saldo insuficiente', async () => {
+    it('deve processar apenas uma aposta e rejeitar a outra por saldo insuficiente', async () => {
         const bet80 = (id: string) => ({
             providerId: 'p1',
             externalTransactionId: id,
@@ -57,16 +57,17 @@ describe('ProcessWagerTransactionUseCase', () => {
             processUseCase.execute(bet80('tx-1')),
             processUseCase.execute(bet80('tx-2')),
         ]);
-        
+
         const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<any>[];
         expect(fulfilled.length).toBe(2);
 
-        const processed = fulfilled.filter(r => r.value.status === 'PROCESSED');
-        const rejected = fulfilled.filter(r => r.value.status === 'REJECTED');
+        const processed = fulfilled.filter(r => r.value.transaction.status === 'PROCESSED');
+        const rejected = fulfilled.filter(r => r.value.transaction.status === 'REJECTED');
 
         expect(processed.length).toBe(1);
         expect(rejected.length).toBe(1);
-        expect(rejected[0].value.failureCode).toBe('INSUFFICIENT_FUNDS');
+        expect(rejected[0].value.transaction.failureCode).toBe('INSUFFICIENT_FUNDS');
+        expect(rejected[0].value.idempotentReplay).toBe(false);
 
         const walletAfter = await em.findOne(Wallet as any, { id: walletId }) as Wallet;
         expect(walletAfter.balance.toJSON().amount).toBe('20.00');
@@ -75,7 +76,7 @@ describe('ProcessWagerTransactionUseCase', () => {
         expect(ledgerEntries.length).toBe(2);
         expect(ledgerEntries.filter(l => l.direction === 'DEBIT').length).toBe(1);
 
-        const rejectedTxId = rejected[0].value.id;
+        const rejectedTxId = rejected[0].value.transaction.id;
         const rejectedLedger = await em.find(WalletLedgerEntry as any, { transactionId: rejectedTxId }) as WalletLedgerEntry[];
         expect(rejectedLedger.length).toBe(0);
     });
@@ -95,7 +96,13 @@ describe('ProcessWagerTransactionUseCase', () => {
         };
 
         const promises = Array.from({ length: 50 }).map(() => processUseCase.execute(betInput));
-        await Promise.all(promises);
+        const results = await Promise.all(promises);
+
+        const replays = results.filter(r => r.idempotentReplay);
+        const firstExecution = results.filter(r => !r.idempotentReplay);
+
+        expect(firstExecution.length).toBe(1);
+        expect(replays.length).toBe(49);
 
         const walletAfter = await em.findOne(Wallet as any, { id: walletId }) as Wallet;
         expect(walletAfter.balance.toJSON().amount).toBe('90.00');

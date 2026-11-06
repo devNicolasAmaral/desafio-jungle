@@ -22,11 +22,16 @@ export interface ProcessWagerTransactionInput {
     referenceExternalTransactionId?: string;
 }
 
+export interface ProcessWagerTransactionOutput {
+    transaction: WagerTransaction;
+    idempotentReplay: boolean;
+}
+
 @Injectable()
 export class ProcessWagerTransactionUseCase {
     constructor(private readonly em: EntityManager) {}
 
-    async execute(input: ProcessWagerTransactionInput, externalEm?: EntityManager): Promise<WagerTransaction> {
+    async execute(input: ProcessWagerTransactionInput, externalEm?: EntityManager): Promise<ProcessWagerTransactionOutput> {
         const manager = externalEm || this.em;
         return manager.transactional(async (em) => {
             const wallet = await em.findOne(Wallet as any, { id: input.walletId }, {
@@ -45,7 +50,7 @@ export class ProcessWagerTransactionUseCase {
                 if (!existingTx.matchesPayload(input.payloadHash)) {
                     throw new Error('Conflito de idempotência: a chave já foi usada com um payload diferente.');
                 }
-                return existingTx;
+                return { transaction: existingTx, idempotentReplay: true };
             }
 
             const transaction = WagerTransaction.create({
@@ -91,7 +96,7 @@ export class ProcessWagerTransactionUseCase {
                     em.persist(OutboxMessage.enqueue(pendingEvent) as any);
                     em.persist(transaction as any);
                     await em.flush();
-                    return transaction;
+                    return { transaction, idempotentReplay: false };
                 }
 
                 if (referenceTx.walletId !== wallet.id 
@@ -160,7 +165,7 @@ export class ProcessWagerTransactionUseCase {
                 });
                 em.persist(OutboxMessage.enqueue(rejectedEvent) as any);
                 await em.flush();
-                return transaction;
+                return { transaction, idempotentReplay: false };
             }
 
             transaction.markProcessed(referenceTx?.id, new Date());
@@ -208,7 +213,7 @@ export class ProcessWagerTransactionUseCase {
             }
 
             await em.flush();
-            return transaction;
+            return { transaction, idempotentReplay: false };
         });
     }
 }

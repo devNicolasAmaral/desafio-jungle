@@ -18,4 +18,5 @@ export default defineConfig({
         disableForeignKeys: false,
     },
     debug: process.env.NODE_ENV !== 'production',
+    ignoreUndefinedInQuery: true,
 });
